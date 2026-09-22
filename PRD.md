@@ -1,11 +1,13 @@
 # PRD: ekVachan — an open, self-hostable, faster System One model
 
-Status: draft v0.3 · Owner: Niyati Singh · Date: 2026-09-22
+Status: draft v0.4 · Owner: Niyati Singh · Date: 2026-09-22
 Model family name: **ekVachan** (Hindi एक वचन, "one word"/"one utterance" — fits a model that returns one committed, typed answer per question instead of generating a stream of text).
 
 *v0.2 note: two independent research passes ran on this task in parallel and were merged here. This document's own research (Sections 1–14 as originally drafted) found `Von`, the architecture-reverse-engineering writeup, and the jabr-v2/ViZDoom benchmark trail. A second pass added the sections marked "(addendum, merged from a parallel research pass)" — JevBench (a second standardized leaderboard, Section 3.1a), conformal prediction as a calibration upgrade (5.3a), a concrete DAgger data-collection method for the game slice (5.3b), and two benchmark-design lessons (8.1a, 8.1b). Where the two passes disagreed — this PRD's Section 5.1 bets on encoder+heads while JevBench's leaderboard is currently dominated by small decoder LLMs — that tension is flagged, not silently resolved (end of 3.1a).*
 
 *v0.3 note: renamed Argus → ekVachan per project owner's decision; Section 7.4 license check completed (all three harness repos confirmed MIT); Section 9 rewritten for self-hosted compute (project owner has their own Linux server, not a rented GPU marketplace); Section 14 open questions resolved and closed out. Both v0.2 and v0.3 passes were done by an AI agent working on this repo — none of the above should be read as independently peer-reviewed; every factual claim still traces to the cited primary source, and that's the standard to hold any future edit to as well.*
+
+*v0.4 note: **the first version of this document written after real training actually ran**, rather than before it. Phase 1 work happened on the owner's own server: `ekvachan-base` (encoder) is trained, evaluated and served behind a working `/v1/systemone`; the decoder comparison arm is mid-run. Section 13a is the new dated run log carrying those measured numbers; Sections 12 (repo tree), 13 (roadmap), 6.1 and 10a are corrected to match what the code actually does today, and Section 14 Q4 gains a cost axis the decoder run surfaced. Everything above v0.4 is still the pre-training plan — where a measured result now contradicts or narrows a planned one, 13a says so explicitly rather than quietly rewriting the plan.*
 
 ---
 
@@ -20,6 +22,8 @@ Jev (TypeSafe AI, launched 2026-09-15) is a closed, hosted "System One" model: g
 So the honest framing for this project is **not** "be first to open-source a faster Jev" — that's already done, multiple times, by small teams over a weekend. The bar is: **build the best one**, prove it on the same public, reproducible evidence trail this ecosystem already uses (frozen benchmarks + game harnesses + signed evidence traces), and make it radically easier to adopt and extend than anything that exists today. Section 3 lays out exactly what "best" has to beat, with numbers.
 
 Everything the user asked for is achievable. Nothing below requires a capability that doesn't exist. The one thing to be upfront about: **training a genuinely better model is an empirical claim you earn by running the benchmarks, not something a PRD can promise in advance.** This document sets concrete, falsifiable targets (Section 8) instead of guaranteeing "we will beat X."
+
+**Where the project actually stands (2026-09-22)**: one model is really trained (`ekvachan-base`: 86.32% accuracy, 0.0344 calibrated ECE on our own held-out NLI test split) and really served behind `/v1/systemone`, the decoder comparison arm is mid-run, and **none of Section 8's benchmarks have been run yet** — so every competitive claim in this document is still a target. Section 13a is the measured record; read it before quoting any number from Sections 5–9 as if it were a result.
 
 ---
 
@@ -198,6 +202,8 @@ Reasoning:
 - Every top performer in the field (Von, Laya) is already this family. Fighting the logit-reading approach on its own turf (Rizzo Flow, open-alternative-jev) means fighting a slower architecture family — not worth it.
 - Tradeoff we accept: encoder approach requires actually training/fine-tuning a model per capability tier, vs. logit-reading's "point it at any LLM you already have." We accept this because G6 (one-command fine-tuning) turns that cost into a feature, not a liability.
 
+**Status 2026-09-22**: this is still a *decision on paper* that Phase 1 is actively testing, per 3.1a and Section 14 Q4 — both arms are implemented (`training/train_encoder.py`, `training/train_decoder_lora.py`) and share one metrics module so their numbers compare fairly. The encoder arm has real results (13a.1); the decoder arm is mid-run. Two of the three reasons above are now partly measured rather than argued: the encoder's serving latency is 27–36 ms unoptimized Python (13a.3, above the <15 ms target but nowhere near the logit-reading family's range), and the calibration bullet held — CE+Brier+temperature scaling produced 0.0344 ECE. The third bullet ("every top performer is this family") remains the weakest of the three, since 3.1a's leaderboard says the opposite on its own distribution.
+
 ### 5.1a Third track: a cross-attention decision head (addendum, post-Phase-1-baseline)
 
 Neither 5.1's two families is a from-scratch architecture — both are standard recipes (classification head; restricted-logit reading) applied to existing pretrained backbones. Inventing and pretraining a genuinely new architecture (what a from-scratch alternative to ModernBERT's 2T-token pretrain would take) is correctly out of scope per Section 4.2 — that's a different order of compute budget entirely.
@@ -205,6 +211,8 @@ Neither 5.1's two families is a from-scratch architecture — both are standard 
 There is a real middle ground worth pursuing once the two baseline numbers exist to compare against: replace the flat classify-the-concatenated-state head with a **cross-attention / late-interaction decision head** — encode the state once, encode each candidate option, and score each via a lightweight interaction layer (ColBERT-style MaxSim, or a MICE-style light cross-attention from a frozen state representation into the option encoding) instead of naive concatenation into one classification head. This is an established, proven technique in reranking/retrieval (ColBERT, MICE) that nobody in the JevBench field has applied to typed-decision scoring — Von/Laya use flat heads, SemIf/reflex do logit-reading over a decoder. It's a genuine architectural differentiator, not a moonshot, and it composes with either base backbone.
 
 Sequencing: this is a Phase 1.5 experiment, not a blocker — run it only after `ekvachan-base` (encoder) and the Qwen3.5-4B LoRA variant both have real numbers, so there's a floor to prove it beats before investing the extra engineering.
+
+**Reweighted 2026-09-22 (13a.3/13a.4)**: this is no longer only an accuracy play. The Phase 1 checkpoint's hard limitation — a fixed head that can't answer an option set it wasn't trained on — is exactly the limitation an option-encoding interaction head removes by construction. So 5.1a is now also the most plausible route to a *general* `choice` primitive, which Section 6's contract requires and today's checkpoint can't provide. Sequencing (after both baselines have numbers) is unchanged; its priority relative to other Phase 2 work goes up.
 
 ### 5.2 Multi-tier model family (mirrors Kev/Von's tiering, sized against their published numbers)
 
@@ -256,7 +264,12 @@ We will not claim to have reverse-engineered or replicated Jev's actual internal
 ## 6. API & SDK design
 
 ### 6.1 Compatibility layer (copy Jev's shape, per the brief)
-`POST /v1/systemone` — byte-for-byte compatible request/response shape with Jev (Section 1.2), so existing Jev/Rizzo-Flow/Von client code works by changing a base URL. This is the "as easy as possible for people to use" lever the brief asked for — zero migration cost for anyone already integrated with Jev's ecosystem (and there already are 12+ language SDKs and a dozen framework integrations built against this exact shape — Section "ecosystem" findings, not reproduced here for brevity but see research dossier).
+`POST /v1/systemone` — request/response shape matching Jev's (Section 1.2), so existing Jev/Rizzo-Flow/Von client code works by changing a base URL. This is the "as easy as possible for people to use" lever the brief asked for — low migration cost for anyone already integrated with Jev's ecosystem (and there already are 12+ language SDKs and a dozen framework integrations built against this exact shape — Section "ecosystem" findings, not reproduced here for brevity but see research dossier).
+
+Two corrections to this section's original wording, made 2026-09-22 after the server was actually built (13a.3):
+
+- It used to say "byte-for-byte compatible." That's not a claim we're in a position to make. The *request* shape follows Section 1.2, which is itself reconstructed from secondary sources; the *response* field names (`results`, `usage`) are our best-effort reconstruction and have never been diffed against a real Jev response body, because there's no live Jev API to diff against. Honest framing: **same request shape, best-effort response shape**. If anyone gets API access, diffing a real response is cheap and should be done before the README claims compatibility.
+- **The Phase 1 implementation is a fraction of this contract.** Only `choice` is implemented, and only for one fixed option set (10a). `score` and `noul` return 501. This section describes the target contract, not today's server.
 
 ### 6.2 Native API (richer than the compatibility shim)
 - Adds a 4th primitive TypeSafe doesn't have: **`vision_choice`** — same as `choice` but `state` may include an image/region reference, backed by `ekvachan-vision`.
@@ -286,6 +299,8 @@ Q8/Q4 export paths (matching what Rizzo Flow already validates as viable at this
 | `ekvachan-vision` (with image encode) | <30ms |
 | Mean latency across a realistic confidence distribution (cascade) | target: beat Von's flat 18ms on **average**, not necessarily on every single call |
 
+Measured so far (13a.3): `ekvachan-base` serves at **27–36 ms warm** through the Python reference server — above target, as expected for eager-mode PyTorch. Treat that as the unoptimized baseline the ONNX/Rust port (7.1) and quantization (7.2) have to improve on, and as the first honest data point that the <15 ms target is a target, not a measurement.
+
 ### 7.4 Reusing public harnesses — license check (completed 2026-09-22)
 Checked directly against each repo's GitHub API license endpoint, not assumed from org reputation:
 
@@ -308,7 +323,7 @@ This is the section that makes G3/G7 falsifiable instead of a slogan.
 2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both).
 3. **StarCraft Strongarm** mission via `tsai-sc`'s harness (license permitting) or a faithful reimplementation — measure win rate and attempts-to-first-win, compared against the "attempt 16" figure reported for Jev.
 4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap ekVachan in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
-5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable.
+5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable. First numbers, on our own eval split rather than any of the benchmarks above, are in 13a.1 — published here whether or not a shared-benchmark number ever flatters them.
 
 ### 8.1a JevBench as an additional standing benchmark (addendum)
 Add JevBench (Section 3.1a) to the standing suite alongside jabr-v2/ViZDoom/StarCraft/browser-use — it's a third-party-maintained, MIT-licensed, already-public leaderboard, which makes a result there harder to dismiss as self-graded than a benchmark we run entirely ourselves. Its own anti-gaming ruleset is worth adopting as a template for 8.2 regardless of which benchmark it's applied to: held-out items and label-mappings committed *before* any run starts, no schema-repair retries, no per-model spending exceptions, one shared budget across all runs.
@@ -337,6 +352,8 @@ A claim like "ekVachan beats Jev at StarCraft" is only true once section 8.1's h
 
 **Decision: self-hosted, on the project owner's own Linux server** — no rented GPU marketplace needed for v1. This removes the spend question entirely (Section 2's "source heavy GPU compute if worth it" resolves to: not worth renting, your own hardware covers every workload above at this model scale) and simplifies the training setup (no spot-instance preemption handling, no egress cost for moving checkpoints/data, full control over the environment).
 
+**Update 2026-09-22**: Phase 1 has now actually run on this server (13a) and the plan held at the encoder scale — but with one constraint this table didn't anticipate. It sizes workloads by parameter count and VRAM; the decoder arm was bottlenecked by **kernel availability** instead, falling back to un-fused reference implementations for Qwen3.5-4B's linear-attention/SSM-style layers and blowing up both time and memory (13a.2). Add that to the preflight checklist for any future run on a hybrid-architecture backbone: confirm the fused kernels are installed before trusting a time estimate derived from parameter count. The paragraph below is left as originally written, since the hardware spec it asks for still hasn't been recorded in this repo.
+
 **What we still need to know before Phase 1 sizing is final**: the server's GPU model and VRAM (run `nvidia-smi` and share the output), and how many GPUs. That determines batch size and whether `ekvachan-vision`/`ekvachan-large` are same-session-feasible or need to wait/queue behind `ekvachan-base`. Everything in the table above assumes a single modern datacenter or high-end consumer GPU (e.g. anything from a 3090/4090 up through an A100/H100 class card) — if the server's card is smaller (e.g. under 16GB VRAM), `ekvachan-base` is still very achievable, just with smaller batch sizes and gradient accumulation, and `ekvachan-vision`/`ekvachan-large` would need either more VRAM or an int8/QLoRA fine-tuning path instead of full fine-tuning.
 
 No cloud spend budget needed for this plan as it stands. If the server ever becomes a bottleneck (e.g. wanting to parallelize multiple experiments), a rented spot GPU (RunPod/Lambda/Vast.ai) remains a fallback option, not a requirement.
@@ -357,6 +374,7 @@ Stated plainly, in one place, rather than left implicit:
 
 - **Calibrated is not the same as correct.** Section 1.3 already notes TypeSafe's own admission that Jev's "zero hallucination" means schema compliance, not truthfulness — it can be confidently wrong. The same is true of ekVachan by construction: temperature scaling and the Brier penalty (Section 5.3) make confidence scores *track* accuracy on average, they don't guarantee any single answer is right. A well-calibrated 90% confidence is still wrong 1 time in 10.
 - **Training data carries its own biases.** The Phase 1 data mix (Section 5.3) is sourced from public NLI corpora (ANLI/WANLI/MultiNLI/SNLI) plus harness-derived traces — none of it is bias-audited beyond the dedup/leakage filtering Section 5.3/the actual pipeline already does. A model fine-tuned on this data for **safety/policy/moderation decisions specifically** (an explicit ~15% slice of the data mix) should not be treated as a ground-truth arbiter without human review in the loop, especially for consequential or ambiguous cases — Section 8.1b's KoBBQ finding (forced answers on ambiguous items skew toward stereotype 79% of the time) is a reason to score abstention separately, not a reason to trust forced answers on hard cases.
+- **The Phase 1 checkpoint answers exactly one question schema** (added 2026-09-22, measured not hypothetical — 13a.3). `ekvachan-base` as trained today has a fixed 3-way classification head that never saw `options` text during training. It can only answer `choice` questions whose options are literally `["entailment", "neutral", "contradiction"]`; it has no mechanism for an arbitrary option list, including the `["billing", "technical", "other"]` example in Section 1.2. `score` and `noul` have no trained model at all. The server enforces this with a 501 rather than mapping an unknown option set onto the head it has — a wrong-but-confident answer here would be the single most misleading failure mode this project could ship, given that calibration is the entire pitch. Anyone reading Sections 5/6/7 should read them as the target design; this bullet is the current capability.
 - **Self-hosting means the operator owns these tradeoffs.** Because this is self-hosted open-weight software, not a hosted product with a shared safety team behind it, whoever deploys it is responsible for appropriate review/human-in-the-loop design for their own use case — this is stated here so it isn't left as an unstated assumption.
 
 This is intentionally proportionate to the project's actual scale (a small, self-hosted, open-weight classifier) — not a claim that heavier processes (RLHF pipelines, dedicated red-teaming programs, external audits) are warranted here; those belong to a different class of system than this one.
@@ -375,6 +393,8 @@ v1 skill capabilities (see `skills/ekvachan-setup/SKILL.md` for the actual instr
 
 This mirrors the fact that TypeSafe itself already ships "an official agent skill for Claude Code integration" for Jev — so this is table stakes for adoption in this ecosystem, not a nice-to-have.
 
+**Status 2026-09-22**: all four capabilities above are still described against an `ekvachan` CLI that doesn't exist — `SKILL.md` documents the target workflow, and its own status note tells the agent to say so plainly rather than fabricate install output. That note now needs updating: it claims `training/`/`eval/`/`server/` don't exist, which is stale for `training/` and `eval/` (they do) and misnamed for serving (`serve/`, not `server/`). The honest current state for an agent to report: training and eval code exist and are runnable as Python modules, the reference server runs and answers one schema, and none of it is wrapped in a CLI yet.
+
 ---
 
 ## 12. Repo structure (as created)
@@ -384,35 +404,115 @@ better-jev-for-all/
   README.md              — short public-facing overview, points to this PRD
   PRD.md                 — this document
   LICENSE                — Apache-2.0
+  pyproject.toml         — Python deps for training + the reference server (torch/transformers/datasets/peft/fastapi)
+  training/
+    data.py               — Phase 1 data pipeline: ANLI+WANLI+MultiNLI+SNLI → the `choice` schema, deduped + leakage-filtered
+    train_encoder.py      — `ekvachan-base`: ModernBERT-large + CE/Brier loss (5.3) + post-hoc temperature scaling, writes an evidence manifest
+    train_decoder_lora.py — the 5.1 comparison arm: Qwen3.5-4B LoRA, restricted-logit read, per-example letter shuffling
+  eval/
+    metrics.py            — accuracy, multi-class Brier, equal-mass ECE, temperature fitting; shared by both training paths so their numbers are directly comparable
+  serve/
+    inference.py          — Phase 1 Python reference wrapper around the trained checkpoint
+    server.py             — `POST /v1/systemone` (FastAPI) + `/health`
   skills/
     ekvachan-setup/
       SKILL.md            — agent-facing setup/benchmark/fine-tune skill
   docs/                   — research notes, landscape tracking, benchmark write-ups (grows over time)
 ```
 
-Code (`server/`, `training/`, `eval/`, SDKs, etc.) is intentionally **not** scaffolded yet — per the brief, this pass is research + decisions + repo setup, not implementation. Section 13 sequences the build.
+`data/` and `checkpoints/` are gitignored — the processed dataset and trained weights live on the training server, not in the repo. Weights aren't published to Hugging Face yet (G2 remains open until they are).
+
+Still **not** built, and deliberately so at this stage: the Rust/ONNX production server (7.1 — `serve/` is a Python reference implementation whose job is to validate the wire contract before committing to a runtime port), the `results/` evidence bundles (8.2), the nano tier and cascade (5.2/G5), the vision tier (G4), `/v1/finetune` (6.2/G6), and the Python/TS SDKs (6.3). Section 13 sequences the rest; Section 13a records what the built parts actually measured.
 
 ---
 
 ## 13. Roadmap
 
 - **Phase 0 (this PRD)**: research, decisions, repo + skill scaffold. ✅ this document.
-- **Phase 1**: `ekvachan-base` encoder fine-tune off ModernBERT-large, compatibility-layer server, jabr-v2 + ECE benchmark reproduction. Ship when we have a real, evidence-backed number to compare against Von — not before.
-- **Phase 2**: `ekvachan-nano` + cascade serving, ViZDoom + StarCraft harness integration, latency benchmark publication.
-- **Phase 3**: `ekvachan-vision`, browser-use/jev-ultrafast swap-in benchmark, fine-tuning pipeline (G6), full SDK (Python + TS).
-- **Phase 4 (stretch)**: `ekvachan-large` third tier, if and only if cascade benchmarking shows a real accuracy ceiling the first two tiers can't clear.
+- **Phase 1** — partially done; per-item status as of 2026-09-22, numbers in 13a:
+  - ✅ Data pipeline (`training/data.py`): the NLI slice of the 5.3 mix, built and verified against the real datasets, 1,206,855 train examples after dedup + train/eval leakage filtering.
+  - ✅ `ekvachan-base` encoder fine-tune off ModernBERT-large with the 5.3 CE+Brier+temperature-scaling recipe — trained, evaluated on a held-out test split, manifest with weight hash saved.
+  - 🔄 Decoder comparison arm (`training/train_decoder_lora.py`, the Qwen3.5-4B restricted-logit variant 3.1a/5.1 asked for) — **running now on a 60k-example subset**; no accuracy or calibration numbers yet. 13a explains why it's a subset.
+  - ✅ Compatibility-layer server (`serve/`) — `POST /v1/systemone` works end to end against the trained checkpoint, Python reference implementation only, and only for the one `choice` schema the checkpoint was trained on (6.1, 10a).
+  - ❌ jabr-v2 reproduction, JevBench submission, evidence bundles in `results/` — **not started**. Until these run, nothing here is a competitive claim against Von or Jev; G3 is untouched.
+  - ❌ Weights published to Hugging Face — not yet.
+- **Phase 2**: `ekvachan-nano` + cascade serving, ViZDoom + StarCraft harness integration, latency benchmark publication. Not started.
+- **Phase 3**: `ekvachan-vision`, browser-use/jev-ultrafast swap-in benchmark, fine-tuning pipeline (G6), full SDK (Python + TS). Not started.
+- **Phase 4 (stretch)**: `ekvachan-large` third tier, if and only if cascade benchmarking shows a real accuracy ceiling the first two tiers can't clear. Not started.
+
+The original Phase 1 exit condition stands unchanged and is **not** met: ship when there's a real, evidence-backed number to compare against Von on a shared benchmark. 13a's numbers are on our own eval split, which is a floor to build on, not that comparison.
+
+---
+
+## 13a. Phase 1 run log — the first real measured results (addendum, 2026-09-22)
+
+Everything above this line was written before any training ran. This section is the first entry that isn't a plan. Rule for it, same as the rest of the doc: only numbers that were actually produced by a run go here, and each one says what it does *not* prove.
+
+### 13a.1 `ekvachan-base` (encoder) — trained, evaluated, served
+
+Recipe as specified in 5.3, no deviations: ModernBERT-large, classification head, CE + Brier (λ=0.5), post-hoc temperature scaling fit on a held-out calibration split. Trained 2 epochs on the full NLI slice from `training/data.py` — **1,206,855 examples** (ANLI + WANLI + MultiNLI + SNLI, deduped, with eval pairs appearing in train stripped out).
+
+Results on the held-out **test** split (n = 35,486). Temperature was fit on a **disjoint** 15,207-example calibration split, so nothing is fit on what it's scored on:
+
+| Metric | Raw (T=1) | Calibrated (T=1.345) |
+|---|---|---|
+| Accuracy | 86.32% | 86.32% (temperature scaling is monotonic — accuracy is unchanged by construction) |
+| ECE (equal-mass, 15 bins) | 0.0689 | **0.0344** |
+| Brier (multi-class) | 0.2172 | **0.2078** |
+
+Manifest with weight SHA256, hyperparameters, and both reports saved alongside the checkpoint.
+
+**What this proves**: the 5.3 recipe works end to end on real data at this scale, and temperature scaling roughly halves ECE — the calibration commitment in Section 8 is implementable, not aspirational. It's a usable floor.
+
+**What this does not prove, stated plainly**:
+- It is **not** G3. G3 is beating Von's published numbers on a reproduction of Von's benchmarks; none of those have been run. 86.32% on 3-way NLI and Von's 72.0% jabr-v2 macro-accuracy across 49 tasks are different tasks on different distributions — putting them in the same sentence as if one were higher than the other would be exactly the kind of number-laundering this doc exists to avoid.
+- The ECE comparison to **Laya** (0.081 post-temperature-scaling, Section 3.1 — still the only alternative publishing ECE directly) is suggestive, not a win: 0.0344 is lower, but it's measured on our own protocol and our own NLI-only distribution, not a shared benchmark either of us both ran. It becomes a real comparison at JevBench/jabr-v2, not before.
+- The eval distribution is narrow. This checkpoint has seen one task family. Section 5.3's other six data slices (operational, security, safety/policy, semantics, triage, game/computer-use traces) are all still unbuilt, and the fixed-schema limitation in 13a.3 is a direct consequence of that.
+
+### 13a.2 Decoder comparison arm — in progress, and already carrying one result that isn't about accuracy
+
+`training/train_decoder_lora.py` (Qwen3.5-4B, LoRA, restricted-logit read) is **running now on a 60,000-example subset**, not the full 1.2M. **No accuracy or calibration numbers exist for it yet — do not cite any.**
+
+The subset is a measured decision, not a shortcut, and the measurement is itself the finding worth recording:
+
+- Qwen3.5-4B is a hybrid architecture — it carries linear-attention/SSM-style layers (`causal_conv1d`, `chunk_gated_delta_rule`). On this server, the optimized kernel packages for those paths (`causal_conv1d`, `flash-linear-attention`) aren't installed, so the model falls back to un-fused reference PyTorch implementations: slow, and much more memory-hungry.
+- Consequence, measured on the actual run, not projected from a spec sheet: **batch size 8 OOM'd; only batch 4 with gradient checkpointing is stable**, and a full-dataset epoch extrapolates to roughly **62 hours** — not a viable thing to hold a shared, multi-tenant lab GPU for. Hence 60k.
+- For contrast, on the same machine the encoder arm trained on the **full 1.2M examples, twice over**, and finished.
+
+**The generalizable point**: the two architecture families in 5.1 don't just differ in accuracy and inference latency — they differ by a large factor in what it costs to *train and iterate on* outside a datacenter. That matters directly to who this is for (4.0: self-hosters, indie agent-framework builders) and to G6, since a "one-command fine-tune on your own data" whose inner loop is a multi-day run on the user's own GPU isn't a one-command feature in any useful sense. Feeds Section 14 Q4.
+
+**Honest scoping of that claim** — it is partly a property of *this server's software environment*, not purely of the architecture:
+- Installing the fused kernels would narrow the gap by an unknown amount. Nobody has measured how much, here or, as far as this pass found, publicly for this model. "Unknown" is the accurate answer; don't round it to "it would be fine."
+- A decoder backbone without SSM-style layers (a plain-attention 4B) wouldn't hit this fallback path at all, so this is not evidence that "decoders are expensive" in general.
+- It *is* evidence about the decoder track as a self-hoster would actually meet it: default install, shared GPU, no hand-tuned kernel setup. That's the deployment story 4.0 cares about, so it's a legitimate input to Q4 — weighted as one axis, not treated as decisive.
+
+### 13a.3 The reference server — works, and is narrower than Section 6 reads
+
+`serve/inference.py` + `serve/server.py` implement `POST /v1/systemone` against the trained checkpoint, tested end to end, not just written.
+
+- **Measured latency, warm: 27–36 ms per call.** Above Section 7.3's <15 ms target for `ekvachan-base`, which is expected and not alarming — this is unoptimized eager-mode PyTorch in Python, i.e. precisely the thing 7.1 argues you don't ship for latency-sensitive serving. It's the pre-optimization baseline the eventual Rust/ONNX port has to beat, and the first real evidence that 7.1's "runtime choice is a first-order latency lever" claim will get tested rather than assumed.
+- **Capability, stated exactly**: only the `choice` primitive, and only for the literal option set `["entailment", "neutral", "contradiction"]`. The classifier head never sees `options` text at training time, so it has no mechanism for answering an arbitrary option list — including Jev's own `["billing", "technical", "other"]` example from Section 1.2. The server returns **501** for any other option set rather than guessing, and `score`/`noul` return 501 too, since no model has been trained for them. See 10a.
+- The response body's field names are a best-effort reconstruction from secondary sources. There is no live Jev API to diff against byte-for-byte, so 6.1's "byte-for-byte compatible" has been corrected to say what's actually verified.
+
+### 13a.4 Consequences for the plan
+
+1. The 3.1a/Q4 encoder-vs-decoder comparison will first resolve on **our own NLI split**, not on JevBench — the two arms share `eval/metrics.py`, so they're fairly comparable to each other, but neither has a JevBench number. 3.1a's recommendation (test both on JevBench before locking 5.1) is therefore still outstanding after this comparison lands.
+2. Making the `choice` head schema-general — conditioning on `options` text rather than a fixed 3-way head — is now a concrete Phase 1 blocker for anything resembling Jev's actual API, not a later refinement. It is also exactly what 5.1a's cross-attention decision head architecturally provides (encode options, score by interaction), which promotes 5.1a from "nice differentiator" to "the likely path to a general `choice` primitive."
+3. Section 9's compute plan held up at this scale, with one correction: its per-workload sizing assumed full fine-tuning throughput on a healthy software stack. The decoder run shows kernel availability, not just VRAM, can be the binding constraint. Worth checking fused-kernel availability before sizing any future run on a hybrid-architecture backbone.
 
 ---
 
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
-1. ~~GPU provider preference~~ → **Self-hosted on the owner's own Linux server** (Section 9 rewritten accordingly). Still need `nvidia-smi` output / GPU spec to finalize Phase 1 batch sizing — not blocking, but worth sharing before training actually starts.
+1. ~~GPU provider preference~~ → **Self-hosted on the owner's own Linux server** (Section 9 rewritten accordingly). Batch sizing is no longer an open question — Phase 1 settled it empirically (13a): the encoder trains fine at the script's default, the decoder arm is stable only at batch 4 with gradient checkpointing. The GPU model/VRAM is still not recorded anywhere in this repo, which is worth fixing not for sizing but for reproducibility — every evidence bundle Section 8.2 commits to shipping should name the hardware its timings were measured on.
 2. ~~Hugging Face org / model-family name~~ → **ekVachan** (renamed throughout this document; HF org/repo naming to be created at Phase 1 kickoff).
 3. ~~License check~~ → **Done** (Section 7.4): `browser-use/jev-ultrafast`, `phyous/tsai-sc`, and `AbdelStark/heist-one` are all MIT. Clear to fork/vendor with attribution.
 
 Still open — needs a decision before Phase 1's architecture work is considered locked:
 4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that currently dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
+
+   **Still open. Update 2026-09-22 (13a)**: both arms are now real code, the encoder arm has numbers and the decoder arm is mid-run, so this resolves on measurement rather than argument — but not yet, and not on JevBench (13a.4). One thing the run has already changed is *what goes into the decision*. The comparison as originally framed was accuracy + calibration + inference latency. 13a.2 adds a fourth axis: **cost to train and iterate on outside a datacenter** — the encoder arm trained on 1.2M examples twice over on the same machine where the decoder arm couldn't finish one epoch in under ~62 projected hours. For Section 4.0's users and for G6 specifically, a model nobody can afford to re-fine-tune on their own hardware is worse than its benchmark row suggests. How heavily to weight that against a possible decoder accuracy win is a judgement call to make when the decoder numbers land — recorded here so it's on the table then, deliberately not pre-decided now. Note also 13a.2's own caveat: part of that cost gap is this server's missing fused kernels, not the architecture, and the size of that part is unmeasured.
 
 ---
 
