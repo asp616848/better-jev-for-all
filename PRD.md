@@ -194,16 +194,33 @@ Reasoning:
 - Every top performer in the field (Von, Laya) is already this family. Fighting the logit-reading approach on its own turf (Rizzo Flow, open-alternative-jev) means fighting a slower architecture family — not worth it.
 - Tradeoff we accept: encoder approach requires actually training/fine-tuning a model per capability tier, vs. logit-reading's "point it at any LLM you already have." We accept this because G6 (one-command fine-tuning) turns that cost into a feature, not a liability.
 
+### 5.1a Third track: a cross-attention decision head (addendum, post-Phase-1-baseline)
+
+Neither 5.1's two families is a from-scratch architecture — both are standard recipes (classification head; restricted-logit reading) applied to existing pretrained backbones. Inventing and pretraining a genuinely new architecture (what a from-scratch alternative to ModernBERT's 2T-token pretrain would take) is correctly out of scope per Section 4.2 — that's a different order of compute budget entirely.
+
+There is a real middle ground worth pursuing once the two baseline numbers exist to compare against: replace the flat classify-the-concatenated-state head with a **cross-attention / late-interaction decision head** — encode the state once, encode each candidate option, and score each via a lightweight interaction layer (ColBERT-style MaxSim, or a MICE-style light cross-attention from a frozen state representation into the option encoding) instead of naive concatenation into one classification head. This is an established, proven technique in reranking/retrieval (ColBERT, MICE) that nobody in the JevBench field has applied to typed-decision scoring — Von/Laya use flat heads, SemIf/reflex do logit-reading over a decoder. It's a genuine architectural differentiator, not a moonshot, and it composes with either base backbone.
+
+Sequencing: this is a Phase 1.5 experiment, not a blocker — run it only after `ekvachan-base` (encoder) and the Qwen3.5-4B LoRA variant both have real numbers, so there's a floor to prove it beats before investing the extra engineering.
+
 ### 5.2 Multi-tier model family (mirrors Kev/Von's tiering, sized against their published numbers)
 
 | Tier | Params | Target latency (local, batch=1) | Role |
 |---|---|---|---|
 | `ekvachan-nano` | ~0.3–0.5B (ModernBERT-base scale) | <10ms | First-pass tier in the cascade (G5); handles the confidently-easy majority of decisions |
 | `ekvachan-base` | ~0.4B (ModernBERT-large scale, matches Von's weight class for a fair head-to-head) | <18ms, target <15ms | Primary tier; this is the model we benchmark against Von directly |
-| `ekvachan-vision` | base tier + a vision encoder fused before the pooling head | <30ms target (vision encoding is the added cost) | The multimodal differentiator (G4) — DOM-screenshot + text state, game frames, robot camera input |
+| `ekvachan-vision` | see 5.2a — no longer "fuse our own vision encoder from scratch" | <30ms target | The multimodal differentiator (G4) — DOM-screenshot + text state, game frames, robot camera input |
 | `ekvachan-large` (stretch, phase 3+) | 4–9B | <150ms | For the hardest cases the cascade escalates to; optional, only if benchmarking shows the cascade needs a third tier |
 
 Rationale for sizing at the small end (not chasing Kev's 9B or an even bigger model): every disclosed benchmark in Section 3 shows near-Jev or better accuracy from *sub-1B* encoders. Size isn't the bottleneck in this problem class — training data quality and calibration method are. Spending compute on a bigger dense model is the lowest-leverage lever available; spending it on data and the cascade/vision work is higher-leverage. Revisit only if `ekvachan-base` benchmarks show a real accuracy ceiling.
+
+### 5.2a Multimodal plan, revised: two paths that both avoid inventing vision fusion ourselves (addendum)
+
+The original plan for `ekvachan-vision` ("base tier + a vision encoder fused before the pooling head") implied a from-scratch research project — nobody in this space had done exactly that when 5.2 was drafted. Two things checked since then change that:
+
+1. **If the decoder track (5.1a / Section 5.1's comparison) ends up competitive**: `Qwen/Qwen3.5-4B` is *already natively multimodal* — text, image, and video input, confirmed on its own model card and release docs. Multimodal capability would come essentially free, no separate fusion work at all, just feeding image input through the same chat-template path already used for the restricted-logit read.
+2. **For the encoder track**: **ModernVBERT** ([HuggingFace: `ModernVBERT`](https://huggingface.co/ModernVBERT)) already exists — a published, open-weight 250M model that fuses ModernBERT with a SigLIP2 vision tower via MLM (10B tokens) + InfoNCE training, with weights, intermediate checkpoints, and training code all public. `ekvachan-vision` should build directly on this proven recipe/checkpoint rather than inventing our own vision-fusion approach from scratch — same de-risking logic as reusing ModernBERT-large itself instead of pretraining an encoder from zero (Section 5.3).
+
+Net effect: multimodal is no longer the PRD's highest-uncertainty line item. Sequencing unchanged (still Phase 3), but the *how* is now concrete and low-risk regardless of which base architecture Section 5.1's comparison favors.
 
 ### 5.3 Training method
 - Base: pretrained open encoder checkpoint (ModernBERT-large is the proven starting point in this space — reuse it, don't pretrain from scratch; NanoJev is the only from-scratch project and it has the weakest headline numbers, which is a real signal, not a coincidence).
