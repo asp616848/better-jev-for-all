@@ -9,48 +9,85 @@ ekVachan is an open-weight "System One" decision model: given a `state` and type
 
 Full design rationale, architecture decisions, and benchmark commitments live in [`../../PRD.md`](../../PRD.md) at the repo root — read that before making any implementation decisions on behalf of a user, since it documents *why* choices were made (model sizing, why encoder-over-logit-reading, cascade design, etc.), not just what to run.
 
-> **Status note:** As of this skill's authoring, Phase 1 (the actual `ekvachan-base` model, training code, and server) has not been built yet — this repo is at the PRD/design stage. The commands below describe the target workflow once Phase 1 ships. If `server/`, `training/`, or `eval/` don't exist yet in the repo root, say so plainly and point the user to the Roadmap section of `PRD.md` instead of fabricating a working install.
+> **Status note (updated 2026-09-22):** Phase 1 is partially real, not fully built. What exists and actually runs: `training/data.py` (data pipeline), `training/train_encoder.py` (the `ekvachan-base` encoder — trained once already, 86.32% accuracy / 0.0344 calibrated ECE, see `PRD.md` Section 13a.1), `training/train_decoder_lora.py` (the Qwen3.5-4B LoRA comparison arm — mid-run as of this writing, no numbers yet), `eval/metrics.py` (shared accuracy/Brier/ECE), and `serve/inference.py` + `serve/server.py` (a real, tested `POST /v1/systemone` FastAPI server). The directory is `serve/`, **not** `server/`. There is **no `ekvachan` CLI** — every command below is a direct Python invocation (`python -m ...` / `uvicorn ...`), not a packaged command. Still not built at all: the benchmark suite (jabr-v2/ViZDoom/StarCraft/JevBench), `results/` evidence bundles, `/v1/finetune`, any SDK, the nano/cascade tier, and the vision tier — if a user asks for any of these, say so plainly and point to `PRD.md` Section 13 (Roadmap) instead of fabricating output.
 
 ## When to use this skill
-- User wants to install/run ekVachan locally.
-- User wants to swap a Jev-integrated project (e.g. a `browser-use/jev-ultrafast`-style agent) over to a self-hosted model.
-- User wants to run the benchmark suite (jabr-v2 reproduction, ViZDoom, StarCraft, browser task — see `PRD.md` Section 8) and get an evidence bundle.
-- User wants to fine-tune a custom decision head on their own labeled data.
+- User wants to train or re-train the encoder or decoder-LoRA comparison arm.
+- User wants to run the local reference server and query `/v1/systemone`.
+- User wants to swap a Jev-integrated project (e.g. a `browser-use/jev-ultrafast`-style agent) over to a self-hosted model — subject to the one-schema limitation below.
+- User wants to understand what's real vs. still aspirational in this repo (this skill's guardrails apply here specifically).
 
-## 1. Install & serve
+Things this skill **cannot** do yet, because the code doesn't exist: run a benchmark suite, produce an evidence bundle, fine-tune via a one-command flow, or serve `score`/`noul` questions or an arbitrary `choice` option set. Say so rather than improvising a substitute.
+
+## 1. Install
 ```bash
 git clone <this-repo-url> && cd better-jev-for-all
-# once Phase 1 ships:
-uv sync
-uv run ekvachan pull --tier base   # downloads the right weight tier for host hardware
-uv run ekvachan serve               # starts local server, default http://127.0.0.1:8080
+uv sync   # or: pip install -e .  — installs torch, transformers, datasets, accelerate, peft, fastapi, uvicorn (pyproject.toml)
 ```
-Smoke-test:
+There is no weight-pulling command — trained checkpoints live in `checkpoints/` (gitignored) on whatever machine trained them; they are not published to Hugging Face yet.
+
+## 2. Train
+
+**Encoder (`ekvachan-base`, ModernBERT-large + classification head, CE+Brier+temperature-scaling — PRD.md Section 5.3):**
+```bash
+python -m training.train_encoder \
+  --base-model answerdotai/ModernBERT-large \
+  --data-dir data/processed/nli_slice \
+  --output-dir checkpoints/ekvachan-base \
+  --epochs 2 --batch-size 96 --grad-accum-steps 1 --eval-batch-size 32 \
+  --lr 2e-5 --max-length 256 --brier-lambda 0.5 --seed 42 \
+  --train-subset 0 --eval-subset 0 --calib-fraction 0.3
+  # add --grad-checkpointing only if you actually OOM; off by default
+```
+All flags above are optional — every one has the default shown (read the `argparse` block at the top of `training/train_encoder.py` if these drift). `--train-subset`/`--eval-subset` (0 = full set) are the fast-smoke-test knobs — use a small nonzero value to sanity-check a change before committing to a full run. On a shared/CUDA GPU the script refuses to start below 4GB free VRAM and auto-shrinks batch size to fit what's actually free, printing a warning when it does.
+
+**Decoder-LoRA comparison arm (Qwen3.5-4B, restricted-logit read, PRD.md Section 5.1/3.1a):**
+```bash
+python -m training.train_decoder_lora \
+  --base-model Qwen/Qwen3.5-4B \
+  --data-dir data/processed/nli_slice \
+  --output-dir checkpoints/ekvachan-decoder-qwen \
+  --epochs 1 --batch-size 4 --grad-accum-steps 16 --eval-batch-size 8 \
+  --lr 1e-4 --max-length 384 --lora-r 16 --lora-alpha 32 --seed 42 \
+  --train-subset 0 --eval-subset 0 --calib-fraction 0.3
+  # --grad-checkpointing: off by default, costs ~30-40% more compute for memory headroom
+```
+Same defaults-shown convention. Be aware before running a full pass: per `PRD.md` Section 13a.2, this model's SSM/linear-attention layers fall back to slow, memory-hungry un-fused kernels unless `causal_conv1d`/`flash-linear-attention` are installed — the measured run needed a 60k-example subset (`--train-subset 60000`) to stay tractable on a shared GPU; a naive full-dataset run can extrapolate to ~60+ hours. Check fused-kernel availability before promising a time estimate.
+
+Both scripts write `checkpoints/<output-dir>/manifest.json` on completion — weight hash (encoder only), hyperparameters, `train_size`/`calib_size`/`test_size`, fitted `temperature`, and `raw_report`/`calibrated_report` (each: `n`, `accuracy`, `brier`, `ece`). Use `training/compare_architectures.py` (point it at one or more checkpoint dirs) to print a side-by-side comparison table once both arms have manifests.
+
+## 3. Serve
+```bash
+uvicorn serve.server:app --host 0.0.0.0 --port 8080
+```
+This loads the checkpoint at `checkpoints/ekvachan-base-run2` (see `serve/inference.py`'s `load_default()`) on first request. If that path doesn't exist on the machine you're running on, point `load_default()`/`EncoderChoiceModel` at whatever checkpoint dir you actually have, or say plainly that no trained checkpoint is available rather than pretending the server works.
+
+Smoke-test — **note the fixed schema**, this is not an arbitrary-options example:
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/systemone \
   -H "Content-Type: application/json" \
-  -d '{"state": "test", "questions": {"ok": {"type": "noul", "instructions": "Is this a test?"}}}'
+  -d '{
+    "state": "Premise: The cat sat on the mat.\nHypothesis: An animal was on the mat.",
+    "questions": {
+      "nli": {"type": "choice", "options": ["entailment", "neutral", "contradiction"]}
+    }
+  }'
 ```
-Expect a JSON response with a probability for `ok` in well under 100ms.
+Expect a JSON response (`results.nli.choice`, `.probabilities`, `.confidence`) in roughly 27–36ms warm (measured, `PRD.md` Section 13a.3 — well above the <15ms target, expected for unoptimized eager-mode Python). `GET /health` is also available.
 
-## 2. Compatibility check against an existing Jev integration
-Point the target codebase's Jev base URL at the local ekVachan server instead of `https://api.typesafe.ai`. Because the wire contract matches (Section 6.1 of `PRD.md`), most integrations need no other code change. If a request uses a feature ekVachan doesn't yet support (check `PRD.md` for current primitive/feature coverage), report the specific gap rather than silently degrading behavior.
+**Any other option set, or `type: "score"`/`type: "noul"`, returns HTTP 501.** This is the checkpoint's real, current limitation (`PRD.md` Section 10a) — the classification head was never trained on `options` text, so it cannot generalize to an arbitrary option list the way Jev's documented API can. Don't work around this by mapping user options onto the fixed schema; report the 501 as what it is.
 
-## 3. Benchmark
-```bash
-uv run ekvachan bench --suite jabr-v2      # accuracy + calibration (ECE)
-uv run ekvachan bench --suite vizdoom      # game benchmark, same seeds as Von's published numbers
-uv run ekvachan bench --suite browser-use  # reproduces the jev-ultrafast flight-search task
-```
-Every run writes a signed evidence bundle to `results/` (raw outputs, seeds, weight hash) — this is required, not optional, per `PRD.md` Section 8.2. Never report a benchmark number to a user without the corresponding evidence bundle existing in `results/`.
+## 4. Compatibility check against an existing Jev integration
+Point the target codebase's Jev base URL at the local ekVachan server instead of `https://api.typesafe.ai`. Request shape matches Jev's documented contract (`PRD.md` Section 1.2/6.1); response shape (`results`, `usage` field names) is a best-effort reconstruction, never diffed against a real Jev response. For any integration beyond the exact NLI `choice` schema above, expect and report a 501 rather than silently degrading behavior.
 
-## 4. Fine-tune on custom data
-```bash
-uv run ekvachan finetune --data <path-to-labeled-jsonl> --base-tier base
-```
-Produces a new head + an automatic eval report (accuracy + ECE on a held-out split). Refuse to skip the eval report step even if the user doesn't ask for it — an unevaluated fine-tune is not a deliverable.
+## Not yet available — say so, don't improvise
+- **Benchmarks** (jabr-v2, ViZDoom, StarCraft, browser-use task, JevBench — `PRD.md` Section 8) and `results/` evidence bundles: no harness code exists in this repo yet.
+- **`/v1/finetune`** / one-command fine-tuning on user data (G6): not built; today's path is running `training/train_encoder.py` by hand against a differently-formatted dataset, which is a real gap from the "one command" goal.
+- Nano tier, cascade serving, vision tier, Rust/ONNX production server, Python/TS SDKs: all still design-only, per `PRD.md` Section 12/13.
 
 ## Guardrails
-- Don't claim a benchmark result (Section 8 of `PRD.md`) is true unless you've actually run it in this session and can point to the evidence bundle.
-- Don't fabricate install/CLI output if the corresponding code doesn't exist yet in the repo — check first.
+- Don't claim a benchmark result (Section 8 of `PRD.md`) is true unless you've actually run it in this session and can point to the evidence bundle — and today, that harness code doesn't exist, so no benchmark claim is possible at all yet.
+- Don't fabricate CLI output for commands that don't exist (there is no `ekvachan` CLI) — the real entry points are the `python -m training....` invocations and `uvicorn serve.server:app` above.
+- Don't quote a training number (accuracy/ECE/Brier) without reading it from an actual `manifest.json` or from `PRD.md` Section 13a — don't estimate or round a number you haven't seen.
+- Don't imply the server answers an arbitrary `choice`/`score`/`noul` question — state the fixed-schema limitation every time this comes up.
 - Model/license questions: everything here is Apache-2.0, including weights once published (`PRD.md` Section 10).
