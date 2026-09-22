@@ -66,8 +66,9 @@ def main():
     ap.add_argument("--data-dir", default=str(REPO_ROOT / "data" / "processed" / "nli_slice"))
     ap.add_argument("--output-dir", default=str(REPO_ROOT / "checkpoints" / "ekvachan-base"))
     ap.add_argument("--epochs", type=int, default=2)
-    ap.add_argument("--batch-size", type=int, default=64)
-    ap.add_argument("--eval-batch-size", type=int, default=128)
+    ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--grad-accum-steps", type=int, default=4, help="effective batch = batch-size * grad-accum-steps")
+    ap.add_argument("--eval-batch-size", type=int, default=32)
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--max-length", type=int, default=256)
     ap.add_argument("--brier-lambda", type=float, default=0.5)
@@ -101,6 +102,22 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     model = AutoModelForSequenceClassification.from_pretrained(args.base_model, num_labels=len(LABELS))
     model.to(device)
+    model.gradient_checkpointing_enable()  # this is a shared lab GPU; trade some speed for a much smaller footprint
+
+    if device == "cuda":
+        free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+        free_gb = free_bytes / 1e9
+        print(f"free VRAM right now: {free_gb:.1f} GB / {total_bytes/1e9:.1f} GB total (shared with other lab jobs)")
+        if free_gb < 4:
+            raise RuntimeError(
+                f"Only {free_gb:.1f} GB free on a shared GPU — refusing to start rather than risk crashing "
+                "someone else's job or getting OOM-killed mid-run. Check `nvidia-smi` and retry when there's more headroom."
+            )
+        if free_gb < 10 and args.batch_size > 8:
+            print(f"WARNING: only {free_gb:.1f} GB free — reducing batch-size from {args.batch_size} to 8 "
+                  f"and raising grad-accum-steps to compensate, to leave headroom for other jobs' memory spikes.")
+            args.grad_accum_steps = max(1, (args.grad_accum_steps * args.batch_size) // 8)
+            args.batch_size = 8
 
     collate = make_collate(tokenizer, args.max_length)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate, num_workers=4)
@@ -108,40 +125,57 @@ def main():
     test_loader = DataLoader(test_ds, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, num_workers=2)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
-    total_steps = len(train_loader) * args.epochs
+    optim_steps_per_epoch = -(-len(train_loader) // args.grad_accum_steps)  # ceil div
+    total_steps = optim_steps_per_epoch * args.epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(0.06 * total_steps), num_training_steps=total_steps)
 
     use_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
-    print(f"bf16: {use_bf16}")
+    print(f"bf16: {use_bf16} | batch_size: {args.batch_size} | grad_accum_steps: {args.grad_accum_steps} "
+          f"(effective batch: {args.batch_size * args.grad_accum_steps})")
 
     start_time = time.time()
     step = 0
+    skipped_oom_batches = 0
     for epoch in range(args.epochs):
         model.train()
         running_loss, running_ce, running_brier = 0.0, 0.0, 0.0
-        for batch in train_loader:
+        optimizer.zero_grad()
+        for i, batch in enumerate(train_loader):
             labels = batch.pop("labels").to(device)
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
-                out = model(**batch)
-                loss, ce_val, brier_val = brier_ce_loss(out.logits, labels, args.brier_lambda)
-
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+            try:
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
+                    out = model(**batch)
+                    loss, ce_val, brier_val = brier_ce_loss(out.logits, labels, args.brier_lambda)
+                (loss / args.grad_accum_steps).backward()
+            except torch.cuda.OutOfMemoryError:
+                # Shared lab GPU: another job's spike can OOM us mid-batch. Don't crash the whole
+                # run over one bad batch — drop it, clear the cache, and keep going.
+                skipped_oom_batches += 1
+                print(f"WARNING: OOM on batch {i}, skipping (total skipped: {skipped_oom_batches})")
+                optimizer.zero_grad()
+                torch.cuda.empty_cache()
+                continue
 
             running_loss += loss.item()
             running_ce += ce_val
             running_brier += brier_val
-            step += 1
-            if step % 200 == 0:
-                elapsed = time.time() - start_time
-                print(f"epoch {epoch} step {step}/{total_steps} | loss {running_loss/200:.4f} "
-                      f"(ce {running_ce/200:.4f} brier {running_brier/200:.4f}) | {elapsed:.0f}s elapsed")
-                running_loss = running_ce = running_brier = 0.0
+
+            is_optim_step = (i + 1) % args.grad_accum_steps == 0 or (i + 1) == len(train_loader)
+            if is_optim_step:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                step += 1
+
+                if step % 200 == 0:
+                    elapsed = time.time() - start_time
+                    denom = 200 * args.grad_accum_steps
+                    print(f"epoch {epoch} step {step}/{total_steps} | loss {running_loss/denom:.4f} "
+                          f"(ce {running_ce/denom:.4f} brier {running_brier/denom:.4f}) | {elapsed:.0f}s elapsed")
+                    running_loss = running_ce = running_brier = 0.0
 
         print(f"=== epoch {epoch} done, {time.time()-start_time:.0f}s elapsed ===")
 
