@@ -73,6 +73,7 @@ def main():
     ap.add_argument("--brier-lambda", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--train-subset", type=int, default=0, help="0 = full dataset; >0 = quick dev run")
+    ap.add_argument("--eval-subset", type=int, default=0, help="0 = full eval set; >0 = quick dev run")
     ap.add_argument("--calib-fraction", type=float, default=0.3, help="fraction of eval set used to fit temperature")
     args = ap.parse_args()
 
@@ -84,6 +85,8 @@ def main():
 
     train_ds = load_from_disk(str(Path(args.data_dir) / "train"))
     eval_ds = load_from_disk(str(Path(args.data_dir) / "eval"))
+    if args.eval_subset:
+        eval_ds = eval_ds.shuffle(seed=args.seed).select(range(min(args.eval_subset, len(eval_ds))))
     if args.train_subset:
         train_ds = train_ds.shuffle(seed=args.seed).select(range(min(args.train_subset, len(train_ds))))
 
