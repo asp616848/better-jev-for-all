@@ -1,0 +1,18 @@
+[project]
+name = "ekvachan"
+version = "0.1.0"
+description = "ekVachan: an open, self-hostable System One decision model"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.4",
+    "transformers>=4.45",
+    "datasets>=3.0",
+    "accelerate>=1.0",
+    "peft>=0.13",
+    "scikit-learn>=1.5",
+    "numpy>=1.26",
+    "huggingface-hub>=0.25",
+]
+
+[tool.uv]
+python-preference = "managed"
