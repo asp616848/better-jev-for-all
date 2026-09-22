@@ -181,6 +181,9 @@ def main():
     ap.add_argument("--train-subset", type=int, default=0)
     ap.add_argument("--eval-subset", type=int, default=0)
     ap.add_argument("--calib-fraction", type=float, default=0.3)
+    ap.add_argument("--grad-checkpointing", action="store_true",
+                     help="off by default: trades ~30-40% more compute for memory headroom; "
+                          "only worth it if a real run OOMs without it")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -217,8 +220,9 @@ def main():
     print(f"train: {len(train_pd)} | calib: {len(calib_pd)} | test: {len(test_pd)}")
 
     model = AutoModelForCausalLM.from_pretrained(args.base_model, dtype=torch.bfloat16, device_map=device)
-    model.gradient_checkpointing_enable()
-    model.enable_input_require_grads()
+    if args.grad_checkpointing:
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
 
     lora_config = LoraConfig(
         r=args.lora_r,
