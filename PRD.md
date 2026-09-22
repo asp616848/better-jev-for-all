@@ -469,17 +469,38 @@ Manifest with weight SHA256, hyperparameters, and both reports saved alongside t
 - The ECE comparison to **Laya** (0.081 post-temperature-scaling, Section 3.1 — still the only alternative publishing ECE directly) is suggestive, not a win: 0.0344 is lower, but it's measured on our own protocol and our own NLI-only distribution, not a shared benchmark either of us both ran. It becomes a real comparison at JevBench/jabr-v2, not before.
 - The eval distribution is narrow. This checkpoint has seen one task family. Section 5.3's other six data slices (operational, security, safety/policy, semantics, triage, game/computer-use traces) are all still unbuilt, and the fixed-schema limitation in 13a.3 is a direct consequence of that.
 
-### 13a.2 Decoder comparison arm — in progress, and already carrying one result that isn't about accuracy
+### 13a.2 Decoder comparison arm — finished, and it wins decisively on this split
 
-`training/train_decoder_lora.py` (Qwen3.5-4B, LoRA, restricted-logit read) is **running now on a 60,000-example subset**, not the full 1.2M. **No accuracy or calibration numbers exist for it yet — do not cite any.**
+`training/train_decoder_lora.py` (Qwen3.5-4B, LoRA, restricted-logit read) trained on a **60,000-example subset** (measured decision, see below), 1 epoch, then evaluated on the **same** held-out test split as the encoder (n=35,486, same 15,207-example disjoint calibration split, same `eval/metrics.py`):
 
-The subset is a measured decision, not a shortcut, and the measurement is itself the finding worth recording:
+| Metric | Raw (T=1) | "Calibrated" (T=1.1455) |
+|---|---|---|
+| Accuracy | **92.25%** | 92.25% (monotonic, unchanged by construction) |
+| ECE (equal-mass, 15 bins) | **0.0232** | 0.0437 |
+| Brier (multi-class) | **0.1190** | 0.1220 |
+
+Side-by-side against the encoder (13a.1), via `training/compare_architectures.py`:
+
+| Metric | Encoder (`ekvachan-base-run2`) | Decoder (`ekvachan-decoder-qwen-run1`) |
+|---|---|---|
+| Train size | 1,206,855 | 60,000 (20× less) |
+| Epochs | 2 | 1 |
+| Total train time | 5h24m | 3h11m |
+| Accuracy | 86.32% | **92.25%** (+5.93pp) |
+| Best ECE | 0.0344 (calibrated) | **0.0232** (raw) |
+| Best Brier | 0.2078 (calibrated) | **0.1190** (raw) |
+
+**The decoder wins on every axis measured here, and by a wide margin, on ~5% of the training data and in less wall-clock time.** Its raw (uncalibrated) ECE alone beats the encoder's best (calibrated) ECE. This is the first real, direct evidence in Section 14 Q4's favor of the decoder family — on our own eval protocol, not yet on JevBench/jabr-v2 (13a.4 still applies).
+
+**One genuine anomaly, reported rather than smoothed over**: temperature scaling made the decoder's ECE and Brier *worse*, not better (0.0232→0.0437, 0.1190→0.1220) — the opposite of the encoder's result, where it roughly halved ECE. The likely cause, not yet confirmed: `train_decoder_lora.py`'s calibration fitting works from `log(restricted_softmax_probs)` as a logit surrogate (there's no access to true pre-softmax logits over an unbounded vocabulary the way the encoder has), and that surrogate may not behave like a true logit under temperature rescaling the way the fitting procedure assumes. This is a measured artifact of the current calibration *method* for this architecture, not evidence the decoder's underlying confidence is poorly calibrated — its raw ECE is the best number in this whole comparison. Worth fixing the calibration procedure before trusting the decoder's "calibrated" column for anything; use raw for now.
+
+The subset-size decision behind these numbers, and the measurement that motivated it, stands as originally recorded:
 
 - Qwen3.5-4B is a hybrid architecture — it carries linear-attention/SSM-style layers (`causal_conv1d`, `chunk_gated_delta_rule`). On this server, the optimized kernel packages for those paths (`causal_conv1d`, `flash-linear-attention`) aren't installed, so the model falls back to un-fused reference PyTorch implementations: slow, and much more memory-hungry.
 - Consequence, measured on the actual run, not projected from a spec sheet: **batch size 8 OOM'd; only batch 4 with gradient checkpointing is stable**, and a full-dataset epoch extrapolates to roughly **62 hours** — not a viable thing to hold a shared, multi-tenant lab GPU for. Hence 60k.
 - For contrast, on the same machine the encoder arm trained on the **full 1.2M examples, twice over**, and finished.
 
-**The generalizable point**: the two architecture families in 5.1 don't just differ in accuracy and inference latency — they differ by a large factor in what it costs to *train and iterate on* outside a datacenter. That matters directly to who this is for (4.0: self-hosters, indie agent-framework builders) and to G6, since a "one-command fine-tune on your own data" whose inner loop is a multi-day run on the user's own GPU isn't a one-command feature in any useful sense. Feeds Section 14 Q4.
+**The generalizable point, revised now that both numbers exist**: the two architecture families differ by a large factor in *per-example* training cost — but the decoder needed **20× less data** to beat the encoder outright, so total wall-clock for this comparison actually favored the decoder (3h11m vs 5h24m), not the encoder. The honest, now-measured version of the cost story is narrower than 13a.2 originally framed it: per-example cost is real and driven by missing fused kernels (still true, still unmeasured how much they'd help), but "decoder = more expensive to iterate on" is not simply true once data-efficiency is accounted for — a self-hoster fine-tuning on their own modest labeled set may find the decoder *cheaper* in practice, not more expensive, if their dataset is small like this one. The full-dataset 62-hour extrapolation (below) is a real number for *that specific scenario* (all 1.2M examples), not a general verdict on the architecture's cost. Feeds Section 14 Q4, now with a genuine tension instead of a one-sided caution: better accuracy/calibration and better data-efficiency, against worse per-example throughput and a less trustworthy calibration procedure.
 
 **Honest scoping of that claim** — it is partly a property of *this server's software environment*, not purely of the architecture:
 - Installing the fused kernels would narrow the gap by an unknown amount. Nobody has measured how much, here or, as far as this pass found, publicly for this model. "Unknown" is the accurate answer; don't round it to "it would be fine."
@@ -512,7 +533,7 @@ Resolved by the project owner on 2026-09-22:
 Still open — needs a decision before Phase 1's architecture work is considered locked:
 4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that currently dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
 
-   **Still open. Update 2026-09-22 (13a)**: both arms are now real code, the encoder arm has numbers and the decoder arm is mid-run, so this resolves on measurement rather than argument — but not yet, and not on JevBench (13a.4). One thing the run has already changed is *what goes into the decision*. The comparison as originally framed was accuracy + calibration + inference latency. 13a.2 adds a fourth axis: **cost to train and iterate on outside a datacenter** — the encoder arm trained on 1.2M examples twice over on the same machine where the decoder arm couldn't finish one epoch in under ~62 projected hours. For Section 4.0's users and for G6 specifically, a model nobody can afford to re-fine-tune on their own hardware is worse than its benchmark row suggests. How heavily to weight that against a possible decoder accuracy win is a judgement call to make when the decoder numbers land — recorded here so it's on the table then, deliberately not pre-decided now. Note also 13a.2's own caveat: part of that cost gap is this server's missing fused kernels, not the architecture, and the size of that part is unmeasured.
+   **Update 2026-09-23 (13a.2)**: both arms now have real numbers on our own NLI split, and the decoder wins decisively — 92.25% accuracy vs. 86.32% (+5.93pp), and its raw ECE (0.0232) beats the encoder's best, calibrated ECE (0.0344), while needing 20× less training data. This is real, direct evidence toward the decoder family, on this eval — **but still not on JevBench** (3.1a's original recommendation), and **not proof the decoder generalizes to arbitrary option sets** (13a.3: neither arm can today — the decoder's LoRA training used the same fixed 3-class schema as the encoder, just read differently at inference time; its restricted-logit mechanism could in principle support variable option sets, but that hasn't been trained or tested). Partially resolved: **on accuracy and calibration, on this narrow task, the decoder wins outright.** Not yet resolved: whether that holds on a genuinely diverse-schema task, and whether it holds on JevBench specifically. The cost-to-iterate axis flips from a caution into a genuine tension once data-efficiency is measured (13a.2's revised framing) — recommend not locking 5.1 in as final until at least a schema-diversity test exists, since that's now the load-bearing open question, not raw accuracy.
 
 ---
 
