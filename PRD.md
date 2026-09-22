@@ -527,11 +527,20 @@ The subset-size decision behind these numbers, and the measurement that motivate
 
 **What was tested**: a LoRA-tuned Qwen3.5-4B, trained on a mix of the existing NLI data (3-way) and DBpedia-14 (CC-BY-SA — real 14-category ontology, each example presented as a random 4–8-way subset always containing the true label), then evaluated on **CLINC150 held out entirely** — zero examples from that dataset/schema appeared anywhere in training. A width-aware version of the letter-shuffle mechanism (extended from 3 to up to 10 options, unused letter-logit columns masked to exact `-inf` before softmax) makes this possible; `eval/metrics.py` works unchanged on the resulting ragged option-count eval set.
 
-**Smoke-test result (320 train examples)**: 99.17% accuracy / 0.039 raw ECE on 120 held-out CLINC150 examples (n=120, OOD schema). Not chance-level (~15–25% for 4–8-way options), not degenerate. A full run (24,000 train examples) is in progress as of this writing.
+**Smoke test (320 train examples)**: 99.17% accuracy / 0.039 raw ECE on 120 held-out CLINC150 examples — promising, but n=120 is small.
 
-**The load-bearing caveat, stated as precisely as the finding**: this is real evidence the *mechanism* works — variable option count, an unseen dataset, no crashes, sensible calibrated output — but it is **not yet evidence of accuracy on hard, wide, realistic classification**. Both the DBpedia-14 training schema and the CLINC150 held-out schema use the same random-4-to-8-option-subset-always-containing-the-answer construction, which is a substantially easier task than genuine 14-way or 151-way (150 intents + `oos`) classification — DBpedia's own in-distribution eval also scored ~100% for the same reason. What's shown so far is that the masking/variable-width machinery is correct and the model doesn't break on an unseen schema; whether it holds up on genuine wide-schema classification (true 14-way, true 150-way) is a distinct, harder, not-yet-run test.
+**Full run (24,000 train examples, 1 epoch, 64m26s)** — the real result:
 
-Feeds 13a.4 point 2 and Section 14 Q4 directly: if this holds up under the full run and a genuinely-hard follow-up, it's evidence the decoder path may reach a general `choice` primitive through **training data alone**, without needing 5.1a's cross-attention head architecture change — a materially cheaper path if true. Not concluded yet.
+| Split | n | Accuracy | Raw ECE | Raw Brier |
+|---|---|---|---|---|
+| eval_id (in-distribution: held-out NLI + DBpedia-14) | 2,100 | 92.14% | 0.0131 | 0.111 |
+| **eval_ood (CLINC150, zero training exposure)** | **3,000** | **98.50%** | **0.0339** | **0.0306** |
+
+Not chance-level (~15–25% for 4–8-way options), not degenerate, and now statistically solid (n=3,000 on the held-out schema). One real, unsurprising texture in the in-distribution breakdown: the adversarially-constructed ANLI/WANLI splits score far weaker (46–81%) than SNLI/MNLI/DBpedia (89–99%) — expected, since ANLI/WANLI are specifically built to be hard, not evidence of a problem with this run.
+
+**The load-bearing caveat, stated as precisely as the finding**: this is real, now well-powered evidence the *mechanism* works — variable option count, a genuinely unseen dataset, no crashes, sensible calibrated output — but it is **not yet evidence of accuracy on hard, wide, realistic classification**. Both the DBpedia-14 training schema and the CLINC150 held-out schema use the same random-4-to-8-option-subset-always-containing-the-answer construction, which is a substantially easier task than genuine 14-way or 151-way (150 intents + `oos`) classification — DBpedia's own in-distribution eval also scored 99.3% for the same reason. What's shown is that the masking/variable-width machinery is correct and the model generalizes cleanly to an unseen dataset under this task design; whether it holds up on genuine wide-schema classification (true 14-way, true 150-way, no subsetting) is a distinct, harder, not-yet-run test — the natural next experiment.
+
+Feeds 13a.4 point 2 and Section 14 Q4 directly: if this holds up under a genuinely-hard follow-up (true wide-schema, no subsetting), it's evidence the decoder path may reach a general `choice` primitive through **training data alone**, without needing 5.1a's cross-attention head architecture change — a materially cheaper path if true. Not concluded yet — the easy-subset caveat above is exactly why.
 
 ---
 
