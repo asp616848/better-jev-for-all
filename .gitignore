@@ -13,3 +13,8 @@ build/
 results/*.raw
 *.log
 .ipynb_checkpoints/
+data/
+checkpoints/
+*.safetensors
+*.bin
+wandb/
