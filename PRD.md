@@ -521,6 +521,18 @@ The subset-size decision behind these numbers, and the measurement that motivate
 2. Making the `choice` head schema-general — conditioning on `options` text rather than a fixed 3-way head — is now a concrete Phase 1 blocker for anything resembling Jev's actual API, not a later refinement. It is also exactly what 5.1a's cross-attention decision head architecturally provides (encode options, score by interaction), which promotes 5.1a from "nice differentiator" to "the likely path to a general `choice` primitive."
 3. Section 9's compute plan held up at this scale, with one correction: its per-workload sizing assumed full fine-tuning throughput on a healthy software stack. The decoder run shows kernel availability, not just VRAM, can be the binding constraint. Worth checking fused-kernel availability before sizing any future run on a hybrid-architecture backbone.
 
+### 13a.5 A first, narrow test of whether the decoder's schema-generality is real (2026-09-23)
+
+13a.2/13a.4 identified the open question directly: the decoder's restricted-logit mechanism is architecturally *not* fixed-width (unlike the encoder's classification head), but had only ever been trained on one fixed 3-class schema. A same-night follow-up (`training/train_decoder_lora_multischema.py`, `training/build_multischema_slice.py`) built a small test of whether that architectural slack is real, ahead of committing to the much larger companion project (`better-jev-bench`) this finding also motivated.
+
+**What was tested**: a LoRA-tuned Qwen3.5-4B, trained on a mix of the existing NLI data (3-way) and DBpedia-14 (CC-BY-SA — real 14-category ontology, each example presented as a random 4–8-way subset always containing the true label), then evaluated on **CLINC150 held out entirely** — zero examples from that dataset/schema appeared anywhere in training. A width-aware version of the letter-shuffle mechanism (extended from 3 to up to 10 options, unused letter-logit columns masked to exact `-inf` before softmax) makes this possible; `eval/metrics.py` works unchanged on the resulting ragged option-count eval set.
+
+**Smoke-test result (320 train examples)**: 99.17% accuracy / 0.039 raw ECE on 120 held-out CLINC150 examples (n=120, OOD schema). Not chance-level (~15–25% for 4–8-way options), not degenerate. A full run (24,000 train examples) is in progress as of this writing.
+
+**The load-bearing caveat, stated as precisely as the finding**: this is real evidence the *mechanism* works — variable option count, an unseen dataset, no crashes, sensible calibrated output — but it is **not yet evidence of accuracy on hard, wide, realistic classification**. Both the DBpedia-14 training schema and the CLINC150 held-out schema use the same random-4-to-8-option-subset-always-containing-the-answer construction, which is a substantially easier task than genuine 14-way or 151-way (150 intents + `oos`) classification — DBpedia's own in-distribution eval also scored ~100% for the same reason. What's shown so far is that the masking/variable-width machinery is correct and the model doesn't break on an unseen schema; whether it holds up on genuine wide-schema classification (true 14-way, true 150-way) is a distinct, harder, not-yet-run test.
+
+Feeds 13a.4 point 2 and Section 14 Q4 directly: if this holds up under the full run and a genuinely-hard follow-up, it's evidence the decoder path may reach a general `choice` primitive through **training data alone**, without needing 5.1a's cross-attention head architecture change — a materially cheaper path if true. Not concluded yet.
+
 ---
 
 ## 14. Open questions
