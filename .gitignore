@@ -18,3 +18,4 @@ checkpoints/
 *.safetensors
 *.bin
 wandb/
+.claude/
