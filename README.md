@@ -6,7 +6,7 @@ Given a `state` and a set of typed `questions` (`choice`, `score`, `noul`), this
 
 **Status: research/design phase.** See [`PRD.md`](./PRD.md) for the full design doc: what Jev actually is, the (already crowded) open-alternative landscape we're benchmarking against, the architecture decisions, training plan, serving design, benchmark commitments, and compute budget.
 
-Model family working codename: **Argus**.
+Model family working codename: **ekVachan**.
 
 ## Why this exists
 
@@ -15,9 +15,9 @@ Jev is closed: hosted API only, no weights, waitlist-gated. Since its launch on 
 ## Repo layout
 
 ```
-PRD.md                    — full design doc (read this first)
-skills/argus-setup/       — agent-usable skill: install, serve, benchmark, fine-tune
-docs/                      — research notes, benchmark write-ups
+PRD.md                  — full design doc (read this first)
+skills/ekvachan-setup/  — agent-usable skill: install, serve, benchmark, fine-tune
+docs/                   — research notes, benchmark write-ups
 ```
 
 ## License

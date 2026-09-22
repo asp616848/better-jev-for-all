@@ -1,9 +1,11 @@
-# PRD: Argus — an open, self-hostable, faster System One model
+# PRD: ekVachan — an open, self-hostable, faster System One model
 
-Status: draft v0.2 · Owner: Niyati Singh · Date: 2026-09-22
-Working codename for the model family: **Argus** (all-seeing watcher — fits a multimodal judge model; trivially renameable, not load-bearing).
+Status: draft v0.3 · Owner: Niyati Singh · Date: 2026-09-22
+Model family name: **ekVachan** (Hindi एक वचन, "one word"/"one utterance" — fits a model that returns one committed, typed answer per question instead of generating a stream of text).
 
-*v0.2 note: two independent research passes ran on this task in parallel and are merged here. This document's own research (Sections 1–14, unchanged) found `Von`, the architecture-reverse-engineering writeup, and the jabr-v2/ViZDoom benchmark trail. A second pass added the sections marked "(addendum, merged from a parallel research pass)" — JevBench (a second standardized leaderboard, Section 3.1a), conformal prediction as a calibration upgrade (5.3a), a concrete DAgger data-collection method for the game slice (5.3b), and two benchmark-design lessons (8.1a, 8.1b). Where the two passes disagree — notably, this PRD's Section 5.1 bets on encoder+heads while the second pass's independent research found the *opposite* architecture family dominating JevBench's leaderboard — that's flagged as an open question for Phase 1 to settle empirically (end of 3.1a), not silently resolved in either direction.*
+*v0.2 note: two independent research passes ran on this task in parallel and were merged here. This document's own research (Sections 1–14 as originally drafted) found `Von`, the architecture-reverse-engineering writeup, and the jabr-v2/ViZDoom benchmark trail. A second pass added the sections marked "(addendum, merged from a parallel research pass)" — JevBench (a second standardized leaderboard, Section 3.1a), conformal prediction as a calibration upgrade (5.3a), a concrete DAgger data-collection method for the game slice (5.3b), and two benchmark-design lessons (8.1a, 8.1b). Where the two passes disagreed — this PRD's Section 5.1 bets on encoder+heads while JevBench's leaderboard is currently dominated by small decoder LLMs — that tension is flagged, not silently resolved (end of 3.1a).*
+
+*v0.3 note: renamed Argus → ekVachan per project owner's decision; Section 7.4 license check completed (all three harness repos confirmed MIT); Section 9 rewritten for self-hosted compute (project owner has their own Linux server, not a rented GPU marketplace); Section 14 open questions resolved and closed out. Both v0.2 and v0.3 passes were done by an AI agent working on this repo — none of the above should be read as independently peer-reviewed; every factual claim still traces to the cited primary source, and that's the standard to hold any future edit to as well.*
 
 ---
 
@@ -99,8 +101,8 @@ Explicit non-goals of the primitive design, per TypeSafe's own docs: no long-for
 | Prove it on fast-paced games + computer use, à la jev-ultrafast | ✅ Achievable — public harnesses already exist (ViZDoom via Von's methodology, StarCraft via `tsai-sc`, browser via `jev-ultrafast`) we can point our model at, or fork | Must credit/license-check any harness we reuse (see 7.4) |
 | Build "much better" than `rizzo-flow` and the wider field | ⚠️ Achievable, not guaranteed in advance | `rizzo-flow`'s own authors admit no superiority over baseline; the real bar is `Von` (SOTA-open right now). Section 3 gives exact numbers to beat. This is an empirical outcome of training + eval, not a design decision |
 | Copy Jev's API design for ease of adoption | ✅ Legally fine and already common practice (`Von`, `Rizzo Flow`, `jev-local` all do this) | We're reproducing a thin JSON interface for interop, not TypeSafe's code, weights, or training method — same posture Rizzo Flow explicitly states |
-| Source heavy GPU compute if worth it | ✅ Worth it, but "heavy" is relative — this problem is encoder-scale (0.1B–9B params), not frontier-LLM-scale. A handful of rented GPU-hours per experiment, not a cluster. See Section 9 | |
-| Ship an agent-usable setup/access skill in its own folder | ✅ Straightforward — scaffolded in this repo at `skills/argus-setup/` | |
+| Source heavy GPU compute if worth it | ✅ Not needed — this problem is encoder-scale (0.1B–9B params), not frontier-LLM-scale, and the project owner's own Linux server covers every workload in the plan. See Section 9 | |
+| Ship an agent-usable setup/access skill in its own folder | ✅ Straightforward — scaffolded in this repo at `skills/ekvachan-setup/` | |
 | "Prove it's better than Jev" as the main focus | ⚠️ Achievable on specific, named benchmarks; **not** a claim we can make true by writing a PRD | Section 8 defines exactly what "prove" means and the concrete numbers we're accountable to |
 
 **Nothing here is impossible.** The only adjustment from the brief as stated: "better than jev" needs to be read as "better than jev **and** better than the current open-source state of the art (Von)," because the open SOTA has already cleared "beats Jev" on at least one headline benchmark. Aiming only at Jev would ship something already obsolete on day one.
@@ -143,9 +145,9 @@ Current top-10 (v1.2–1.3):
 
 `Von` was not visible in JevBench's top 10 in this pass — I did not confirm whether it's ranked lower or simply not submitted; don't treat that as evidence either way without checking `jevbench`'s full results directly.
 
-**A real tension worth flagging rather than resolving silently**: on *this* benchmark, the architecture family that dominates the top 5 is exactly the one Section 5.1 rejects — small **decoder** LLMs (Qwen3.5-4B class) read via restricted-logit scoring, not fine-tuned bidirectional encoders. The one pure-encoder entrant on the board, Laya (ModernBERT-large, the same weight class Section 5.2 sizes `argus-base` at), lands at rank 33 with an Intelligence score of 46 — *below* JevBench's own chance-adjusted floor of 50, which triggers a squared penalty (`total × (Intelligence/50)²`) on top of an already-weak raw score. That's a structural, not incidental, result: JevBench's Intelligence axis spans harder/judge-tier reasoning-shaped decisions where a small bidirectional classifier without a language-model backbone appears to lose real ground, independent of Von's own (different) benchmark showing an encoder winning on ViZDoom.
+**A real tension worth flagging rather than resolving silently**: on *this* benchmark, the architecture family that dominates the top 5 is exactly the one Section 5.1 rejects — small **decoder** LLMs (Qwen3.5-4B class) read via restricted-logit scoring, not fine-tuned bidirectional encoders. The one pure-encoder entrant on the board, Laya (ModernBERT-large, the same weight class Section 5.2 sizes `ekvachan-base` at), lands at rank 33 with an Intelligence score of 46 — *below* JevBench's own chance-adjusted floor of 50, which triggers a squared penalty (`total × (Intelligence/50)²`) on top of an already-weak raw score. That's a structural, not incidental, result: JevBench's Intelligence axis spans harder/judge-tier reasoning-shaped decisions where a small bidirectional classifier without a language-model backbone appears to lose real ground, independent of Von's own (different) benchmark showing an encoder winning on ViZDoom.
 
-This isn't a reason to reverse Section 5.1's decision on the strength of one leaderboard — Von's numbers are real too, and jabr-v2/ViZDoom test a different, more game/action-shaped distribution than JevBench's text-decision-heavy set. But it is a reason to **treat 5.1 as a hypothesis the Phase 1 benchmark run needs to actually stress-test on JevBench specifically, not just on jabr-v2** — if `argus-base` lands near Laya's Intelligence score on JevBench's harder tiers, that's a real signal the encoder bet needs a language-model-backboned variant (closer to the reflex/SemIf recipe: LoRA-tune a small Qwen3.5, read restricted next-token logits, skip building classification heads from scratch) for the tiers where reasoning-shaped judgment matters, even if the pure encoder stays the latency-optimal choice for simple/fast game-tick decisions. Recommendation: **run both families on JevBench in Phase 1 before locking 5.1 in as final** — the cost of testing this is a few LoRA-training-hours (Section 9), trivial next to the cost of discovering it post-launch.
+This isn't a reason to reverse Section 5.1's decision on the strength of one leaderboard — Von's numbers are real too, and jabr-v2/ViZDoom test a different, more game/action-shaped distribution than JevBench's text-decision-heavy set. But it is a reason to **treat 5.1 as a hypothesis the Phase 1 benchmark run needs to actually stress-test on JevBench specifically, not just on jabr-v2** — if `ekvachan-base` lands near Laya's Intelligence score on JevBench's harder tiers, that's a real signal the encoder bet needs a language-model-backboned variant (closer to the reflex/SemIf recipe: LoRA-tune a small Qwen3.5, read restricted next-token logits, skip building classification heads from scratch) for the tiers where reasoning-shaped judgment matters, even if the pure encoder stays the latency-optimal choice for simple/fast game-tick decisions. Recommendation: **run both families on JevBench in Phase 1 before locking 5.1 in as final** — the cost of testing this is a few LoRA-training-hours (Section 9), trivial next to the cost of discovering it post-launch.
 
 If the decoder family does turn out to matter for a tier, note for Section 7: that family's dominant technique (encode `state` once into a KV cache, branch each question off a restricted-token read) is a close structural match for **SGLang's RadixAttention** (automatic prefix-cache sharing across requests with a common prefix) — a serving-engine option worth having on the shortlist alongside the Rust/ONNX/TensorRT stack Section 7.1 already commits to for the encoder tiers, if/when a decoder-backboned tier gets added.
 
@@ -168,10 +170,10 @@ If the decoder family does turn out to matter for a tier, note for Section 7: th
 - G5 — Ship a **cascade serving architecture** (nano → base escalation) that beats Von's flat sub-18ms on *average* latency across a realistic confidence distribution, without regressing hard-case accuracy.
 - G6 — Ship a **one-command fine-tuning pipeline**: bring your own labeled examples, get a calibrated custom head back, with an eval report (accuracy + ECE) automatically generated.
 - G7 — Reproduce or extend the **public game/computer-use harnesses** (ViZDoom, StarCraft Strongarm, browser-use flights task) with our model swapped in, evidence-traced, and license-checked.
-- G8 — Ship an **agent-usable setup skill** so any AI coding agent (Claude Code, etc.) can install, run, benchmark, and fine-tune Argus with minimal human hand-holding.
+- G8 — Ship an **agent-usable setup skill** so any AI coding agent (Claude Code, etc.) can install, run, benchmark, and fine-tune ekVachan with minimal human hand-holding.
 
 ### 4.2 Non-goals (explicitly out of scope for v1)
-- We are **not** building a general chat/reasoning LLM. Same philosophy as Jev: "code calculates, Argus judges, a real LLM reasons and generates." Anyone needing open-ended text stays on their existing LLM.
+- We are **not** building a general chat/reasoning LLM. Same philosophy as Jev: "code calculates, ekVachan judges, a real LLM reasons and generates." Anyone needing open-ended text stays on their existing LLM.
 - We are **not** trying to match frontier-LLM-scale pretraining. This is encoder-scale (0.1B–9B).
 - We are **not** promising to beat Jev/Von on every single axis — the PRD sets targets, not guarantees (see Section 2).
 - We are **not** building our own browser/game engines — we reuse or fork existing public harnesses (`browser-use`, ViZDoom, `tsai-sc`) rather than reinventing them.
@@ -196,12 +198,12 @@ Reasoning:
 
 | Tier | Params | Target latency (local, batch=1) | Role |
 |---|---|---|---|
-| `argus-nano` | ~0.3–0.5B (ModernBERT-base scale) | <10ms | First-pass tier in the cascade (G5); handles the confidently-easy majority of decisions |
-| `argus-base` | ~0.4B (ModernBERT-large scale, matches Von's weight class for a fair head-to-head) | <18ms, target <15ms | Primary tier; this is the model we benchmark against Von directly |
-| `argus-vision` | base tier + a vision encoder fused before the pooling head | <30ms target (vision encoding is the added cost) | The multimodal differentiator (G4) — DOM-screenshot + text state, game frames, robot camera input |
-| `argus-large` (stretch, phase 3+) | 4–9B | <150ms | For the hardest cases the cascade escalates to; optional, only if benchmarking shows the cascade needs a third tier |
+| `ekvachan-nano` | ~0.3–0.5B (ModernBERT-base scale) | <10ms | First-pass tier in the cascade (G5); handles the confidently-easy majority of decisions |
+| `ekvachan-base` | ~0.4B (ModernBERT-large scale, matches Von's weight class for a fair head-to-head) | <18ms, target <15ms | Primary tier; this is the model we benchmark against Von directly |
+| `ekvachan-vision` | base tier + a vision encoder fused before the pooling head | <30ms target (vision encoding is the added cost) | The multimodal differentiator (G4) — DOM-screenshot + text state, game frames, robot camera input |
+| `ekvachan-large` (stretch, phase 3+) | 4–9B | <150ms | For the hardest cases the cascade escalates to; optional, only if benchmarking shows the cascade needs a third tier |
 
-Rationale for sizing at the small end (not chasing Kev's 9B or an even bigger model): every disclosed benchmark in Section 3 shows near-Jev or better accuracy from *sub-1B* encoders. Size isn't the bottleneck in this problem class — training data quality and calibration method are. Spending compute on a bigger dense model is the lowest-leverage lever available; spending it on data and the cascade/vision work is higher-leverage. Revisit only if `argus-base` benchmarks show a real accuracy ceiling.
+Rationale for sizing at the small end (not chasing Kev's 9B or an even bigger model): every disclosed benchmark in Section 3 shows near-Jev or better accuracy from *sub-1B* encoders. Size isn't the bottleneck in this problem class — training data quality and calibration method are. Spending compute on a bigger dense model is the lowest-leverage lever available; spending it on data and the cascade/vision work is higher-leverage. Revisit only if `ekvachan-base` benchmarks show a real accuracy ceiling.
 
 ### 5.3 Training method
 - Base: pretrained open encoder checkpoint (ModernBERT-large is the proven starting point in this space — reuse it, don't pretrain from scratch; NanoJev is the only from-scratch project and it has the weakest headline numbers, which is a real signal, not a coincidence).
@@ -236,7 +238,7 @@ We will not claim to have reverse-engineered or replicated Jev's actual internal
 `POST /v1/systemone` — byte-for-byte compatible request/response shape with Jev (Section 1.2), so existing Jev/Rizzo-Flow/Von client code works by changing a base URL. This is the "as easy as possible for people to use" lever the brief asked for — zero migration cost for anyone already integrated with Jev's ecosystem (and there already are 12+ language SDKs and a dozen framework integrations built against this exact shape — Section "ecosystem" findings, not reproduced here for brevity but see research dossier).
 
 ### 6.2 Native API (richer than the compatibility shim)
-- Adds a 4th primitive TypeSafe doesn't have: **`vision_choice`** — same as `choice` but `state` may include an image/region reference, backed by `argus-vision`.
+- Adds a 4th primitive TypeSafe doesn't have: **`vision_choice`** — same as `choice` but `state` may include an image/region reference, backed by `ekvachan-vision`.
 - Exposes **cascade control** explicitly: request can pass `max_latency_ms` or `min_confidence`, and the server decides nano-only vs nano+base escalation transparently — this is the serving-layer differentiator from G5, exposed as an API knob rather than hidden.
 - Returns **which tier answered** and its actual latency in the response, for observability — nobody else in the landscape surfaces this.
 - `POST /v1/finetune` (local-only, no auth needed for self-hosted) kicks off the one-command fine-tuning flow from G6, returns a job id and eval report on completion.
@@ -258,13 +260,21 @@ Q8/Q4 export paths (matching what Rizzo Flow already validates as viable at this
 ### 7.3 Latency budget (targets, to be validated empirically — Section 8 has the actual accountability numbers)
 | Stage | Target |
 |---|---|
-| `argus-nano` (cascade first pass) | <10ms |
-| `argus-base` (escalation / direct call) | <15ms |
-| `argus-vision` (with image encode) | <30ms |
+| `ekvachan-nano` (cascade first pass) | <10ms |
+| `ekvachan-base` (escalation / direct call) | <15ms |
+| `ekvachan-vision` (with image encode) | <30ms |
 | Mean latency across a realistic confidence distribution (cascade) | target: beat Von's flat 18ms on **average**, not necessarily on every single call |
 
-### 7.4 Reusing public harnesses — license check required before any code reuse
-Before forking or vendoring code from `browser-use/jev-ultrafast`, `phyous/tsai-sc`, the HEIST//ONE repo, or Von's ViZDoom harness: confirm each repo's actual license file (not assumed from the org's general reputation) before redistributing any of their code inside this repo. Where a harness's license is unclear or restrictive, reimplement the *task definition* (same seeds, same win condition, same scoring) independently rather than copying code — task definitions (which seed, which map, what counts as a win) are not copyrightable in the way source code is.
+### 7.4 Reusing public harnesses — license check (completed 2026-09-22)
+Checked directly against each repo's GitHub API license endpoint, not assumed from org reputation:
+
+| Repo | License | Implication |
+|---|---|---|
+| `browser-use/jev-ultrafast` | MIT | Free to fork/vendor with attribution — keep the MIT copyright + permission notice in any copied file |
+| `phyous/tsai-sc` | MIT | Same |
+| `AbdelStark/heist-one` (HEIST//ONE) | MIT | Same |
+
+All three clear. When we actually fork any of them in Phase 2/3, keep the original LICENSE file (or the MIT notice block) alongside the vendored code, and note in our own README which parts are adapted from which upstream repo — MIT only requires the notice be preserved, but doing this makes the provenance trail auditable, which matters for a project whose whole pitch is evidence discipline (Section 8.2). Von's ViZDoom harness license was not checked in this pass (we don't yet know its exact repo path) — check before Phase 2 forks it specifically.
 
 ---
 
@@ -276,7 +286,7 @@ This is the section that makes G3/G7 falsifiable instead of a slogan.
 1. **jabr-v2** (49-task, 869-case OOD benchmark Von reports on) — reproduce Von's exact eval harness/seeds if publicly available; if not, use the same task categories and disclose the difference. Target: beat Von's 72.0% macro-accuracy. Publish our number regardless of outcome.
 2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both).
 3. **StarCraft Strongarm** mission via `tsai-sc`'s harness (license permitting) or a faithful reimplementation — measure win rate and attempts-to-first-win, compared against the "attempt 16" figure reported for Jev.
-4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap Argus in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
+4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap ekVachan in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
 5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable.
 
 ### 8.1a JevBench as an additional standing benchmark (addendum)
@@ -289,7 +299,7 @@ An independent KoBBQ audit of hosted Jev found it answers "unknown" on 95% of *d
 Every benchmark run ships as a signed evidence bundle (raw outputs, seeds, prompt/state hashes, weight hash, timestamp) in `results/` — matching the norm this ecosystem has already converged on (Rizzo Flow's evidence traces, jabr-v2's "frozen benchmark" design, HEIST//ONE's evidence traces, JevBench's frozen-and-hashed test cases). This is non-negotiable for credibility in a field this benchmark-literate.
 
 ### 8.3 What "we proved it" means in practice
-A claim like "Argus beats Jev at StarCraft" is only true once section 8.1's harness has actually run and the evidence bundle is in the repo. Until then, it's a target, and the README must say so.
+A claim like "ekVachan beats Jev at StarCraft" is only true once section 8.1's harness has actually run and the evidence bundle is in the repo. Until then, it's a target, and the README must say so.
 
 ---
 
@@ -299,12 +309,16 @@ A claim like "Argus beats Jev at StarCraft" is only true once section 8.1's harn
 
 | Workload | Scale | Suggested compute | Rough time |
 |---|---|---|---|
-| `argus-nano`/`argus-base` fine-tune from ModernBERT checkpoint | 0.3–0.5B | 1× A100 80GB or 1× H100 (rented) | Hours, not days |
-| `argus-vision` fusion training | base + small vision encoder | 1× A100/H100 | Low single-digit hours per iteration |
-| `argus-large` (stretch tier, only if the cascade proves it's needed) | 4–9B | 1× H100, possibly multi-GPU for larger batch sizes | Under a day per run |
-| Full benchmark suite (Section 8) | inference only | Can run on a single consumer GPU or even CPU for the smaller tiers | Hours |
+| `ekvachan-nano`/`ekvachan-base` fine-tune from ModernBERT checkpoint | 0.3–0.5B | 1 GPU, 16GB+ VRAM is comfortable | Hours, not days |
+| `ekvachan-vision` fusion training | base + small vision encoder | 1 GPU, 24GB+ VRAM recommended (image batches are the constraint) | Low single-digit hours per iteration |
+| `ekvachan-large` (stretch tier, only if the cascade proves it's needed) | 4–9B | 1 GPU, 40GB+ VRAM (80GB comfortable for larger batch sizes); multi-GPU only if you want faster wall-clock, not because it's required | Under a day per run |
+| Full benchmark suite (Section 8) | inference only | Runs fine on a single consumer GPU, or CPU for the smaller tiers | Hours |
 
-**Recommendation**: rent by the hour from a spot-priced GPU marketplace (RunPod, Lambda, Vast.ai, or similar) rather than committing to a reserved cluster. Verify current spot rates before budgeting a number — GPU spot pricing moves fast enough that any figure in this PRD would be stale by the time you read it; get a live quote from whichever provider you pick at kickoff. Total spend for a full v1 (all four tiers, several training iterations, full benchmark suite) is realistically **low-hundreds to low-thousands of dollars** in rented GPU time, not a "source a cluster" undertaking. This is a solo/small-team-affordable project, which is itself worth stating plainly since the brief asked whether heavy GPU spend was warranted — it isn't, at this model scale.
+**Decision: self-hosted, on the project owner's own Linux server** — no rented GPU marketplace needed for v1. This removes the spend question entirely (Section 2's "source heavy GPU compute if worth it" resolves to: not worth renting, your own hardware covers every workload above at this model scale) and simplifies the training setup (no spot-instance preemption handling, no egress cost for moving checkpoints/data, full control over the environment).
+
+**What we still need to know before Phase 1 sizing is final**: the server's GPU model and VRAM (run `nvidia-smi` and share the output), and how many GPUs. That determines batch size and whether `ekvachan-vision`/`ekvachan-large` are same-session-feasible or need to wait/queue behind `ekvachan-base`. Everything in the table above assumes a single modern datacenter or high-end consumer GPU (e.g. anything from a 3090/4090 up through an A100/H100 class card) — if the server's card is smaller (e.g. under 16GB VRAM), `ekvachan-base` is still very achievable, just with smaller batch sizes and gradient accumulation, and `ekvachan-vision`/`ekvachan-large` would need either more VRAM or an int8/QLoRA fine-tuning path instead of full fine-tuning.
+
+No cloud spend budget needed for this plan as it stands. If the server ever becomes a bottleneck (e.g. wanting to parallelize multiple experiments), a rented spot GPU (RunPod/Lambda/Vast.ai) remains a fallback option, not a requirement.
 
 ---
 
@@ -318,9 +332,9 @@ A claim like "Argus beats Jev at StarCraft" is only true once section 8.1's harn
 
 ## 11. Agent skill (the "internal skill folder" ask)
 
-Scaffolded at `skills/argus-setup/`. Purpose: let a user hand this repo to their own coding agent (Claude Code or similar) and have the agent self-serve setup, without the human reading install docs.
+Scaffolded at `skills/ekvachan-setup/`. Purpose: let a user hand this repo to their own coding agent (Claude Code or similar) and have the agent self-serve setup, without the human reading install docs.
 
-v1 skill capabilities (see `skills/argus-setup/SKILL.md` for the actual instructions):
+v1 skill capabilities (see `skills/ekvachan-setup/SKILL.md` for the actual instructions):
 1. **Install & serve** — clone, pull the right weight tier for the host's hardware, start the local server, verify with a smoke-test call.
 2. **Compat-check** — point an existing Jev-integrated codebase at the local server and flag any request shape it doesn't yet support.
 3. **Benchmark** — run the Section 8 suite locally and produce the evidence bundle.
@@ -338,7 +352,7 @@ better-jev-for-all/
   PRD.md                 — this document
   LICENSE                — Apache-2.0
   skills/
-    argus-setup/
+    ekvachan-setup/
       SKILL.md            — agent-facing setup/benchmark/fine-tune skill
   docs/                   — research notes, landscape tracking, benchmark write-ups (grows over time)
 ```
@@ -350,18 +364,22 @@ Code (`server/`, `training/`, `eval/`, SDKs, etc.) is intentionally **not** scaf
 ## 13. Roadmap
 
 - **Phase 0 (this PRD)**: research, decisions, repo + skill scaffold. ✅ this document.
-- **Phase 1**: `argus-base` encoder fine-tune off ModernBERT-large, compatibility-layer server, jabr-v2 + ECE benchmark reproduction. Ship when we have a real, evidence-backed number to compare against Von — not before.
-- **Phase 2**: `argus-nano` + cascade serving, ViZDoom + StarCraft harness integration, latency benchmark publication.
-- **Phase 3**: `argus-vision`, browser-use/jev-ultrafast swap-in benchmark, fine-tuning pipeline (G6), full SDK (Python + TS).
-- **Phase 4 (stretch)**: `argus-large` third tier, if and only if cascade benchmarking shows a real accuracy ceiling the first two tiers can't clear.
+- **Phase 1**: `ekvachan-base` encoder fine-tune off ModernBERT-large, compatibility-layer server, jabr-v2 + ECE benchmark reproduction. Ship when we have a real, evidence-backed number to compare against Von — not before.
+- **Phase 2**: `ekvachan-nano` + cascade serving, ViZDoom + StarCraft harness integration, latency benchmark publication.
+- **Phase 3**: `ekvachan-vision`, browser-use/jev-ultrafast swap-in benchmark, fine-tuning pipeline (G6), full SDK (Python + TS).
+- **Phase 4 (stretch)**: `ekvachan-large` third tier, if and only if cascade benchmarking shows a real accuracy ceiling the first two tiers can't clear.
 
 ---
 
-## 14. Open questions for you (need a decision before Phase 1 starts)
-1. GPU provider preference for Phase 1 (RunPod / Lambda / Vast.ai / other) — no strong reason to prefer one from research; pick based on whichever you already have billing set up with.
-2. Hugging Face org name for published weights (affects branding/URLs — e.g. is "argus" available, or do you want a different model-family name entirely).
-3. Confirm license file check (Section 7.4) before we fork any of `browser-use/jev-ultrafast`, `tsai-sc`, or HEIST//ONE's code — want me to do that check now, or hold until Phase 2 when we actually need the harness?
-4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
+## 14. Open questions
+
+Resolved by the project owner on 2026-09-22:
+1. ~~GPU provider preference~~ → **Self-hosted on the owner's own Linux server** (Section 9 rewritten accordingly). Still need `nvidia-smi` output / GPU spec to finalize Phase 1 batch sizing — not blocking, but worth sharing before training actually starts.
+2. ~~Hugging Face org / model-family name~~ → **ekVachan** (renamed throughout this document; HF org/repo naming to be created at Phase 1 kickoff).
+3. ~~License check~~ → **Done** (Section 7.4): `browser-use/jev-ultrafast`, `phyous/tsai-sc`, and `AbdelStark/heist-one` are all MIT. Clear to fork/vendor with attribution.
+
+Still open — needs a decision before Phase 1's architecture work is considered locked:
+4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that currently dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
 
 ---
 
