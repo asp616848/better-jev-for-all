@@ -66,9 +66,12 @@ def main():
     ap.add_argument("--data-dir", default=str(REPO_ROOT / "data" / "processed" / "nli_slice"))
     ap.add_argument("--output-dir", default=str(REPO_ROOT / "checkpoints" / "ekvachan-base"))
     ap.add_argument("--epochs", type=int, default=2)
-    ap.add_argument("--batch-size", type=int, default=16)
-    ap.add_argument("--grad-accum-steps", type=int, default=4, help="effective batch = batch-size * grad-accum-steps")
+    ap.add_argument("--batch-size", type=int, default=96)
+    ap.add_argument("--grad-accum-steps", type=int, default=1, help="effective batch = batch-size * grad-accum-steps")
     ap.add_argument("--eval-batch-size", type=int, default=32)
+    ap.add_argument("--grad-checkpointing", action="store_true",
+                     help="off by default: a 395M encoder doesn't need it, and it costs real throughput "
+                          "for memory headroom this model scale doesn't require")
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--max-length", type=int, default=256)
     ap.add_argument("--brier-lambda", type=float, default=0.5)
@@ -102,7 +105,8 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     model = AutoModelForSequenceClassification.from_pretrained(args.base_model, num_labels=len(LABELS))
     model.to(device)
-    model.gradient_checkpointing_enable()  # this is a shared lab GPU; trade some speed for a much smaller footprint
+    if args.grad_checkpointing:
+        model.gradient_checkpointing_enable()
 
     if device == "cuda":
         free_bytes, total_bytes = torch.cuda.mem_get_info(0)
@@ -113,11 +117,15 @@ def main():
                 f"Only {free_gb:.1f} GB free on a shared GPU — refusing to start rather than risk crashing "
                 "someone else's job or getting OOM-killed mid-run. Check `nvidia-smi` and retry when there's more headroom."
             )
-        if free_gb < 10 and args.batch_size > 8:
-            print(f"WARNING: only {free_gb:.1f} GB free — reducing batch-size from {args.batch_size} to 8 "
+        # Soft cap, scaled to currently-free memory rather than a fixed number calibrated for a
+        # different config — leaves headroom for other jobs' spikes without needlessly crashing
+        # every batch size down to the same floor regardless of actual availability.
+        safe_batch = max(8, int(args.batch_size * min(1.0, (free_gb - 3) / 12)))
+        if safe_batch < args.batch_size:
+            print(f"WARNING: only {free_gb:.1f} GB free — reducing batch-size from {args.batch_size} to {safe_batch} "
                   f"and raising grad-accum-steps to compensate, to leave headroom for other jobs' memory spikes.")
-            args.grad_accum_steps = max(1, (args.grad_accum_steps * args.batch_size) // 8)
-            args.batch_size = 8
+            args.grad_accum_steps = max(1, (args.grad_accum_steps * args.batch_size) // safe_batch)
+            args.batch_size = safe_batch
 
     collate = make_collate(tokenizer, args.max_length)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate, num_workers=4)
