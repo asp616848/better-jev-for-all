@@ -162,6 +162,10 @@ If the decoder family does turn out to matter for a tier, note for Section 7: th
 
 ## 4. Goals and non-goals
 
+### 4.0 Who this is actually for
+
+Stated explicitly once, rather than left implicit across the benchmark sections: this targets (1) **agent-framework builders** who need a fast, cheap routing/decision layer inside an agent loop instead of paying full LLM-generation cost for a bounded choice (the `browser-use/jev-ultrafast` pattern — Section 1.4); (2) **game-AI / computer-use developers** building the kind of bounded-action-space harnesses Section 1.4 describes (guard judgments, unit orders, DOM element selection); (3) **triage/moderation/support-routing teams** who currently call a full chat LLM just to classify or score something, and want the cost/latency win without giving up self-hosting or calibration guarantees. If your use case is open-ended generation, summarization, or reasoning, this isn't the tool (Section 4.2) — stay on your existing LLM.
+
 ### 4.1 Goals
 - G1 — **API-compatible** with Jev's `/v1/systemone` contract (drop-in swap by changing a base URL), plus a richer native API.
 - G2 — **Self-hostable, open-weight**, no waitlist, no vendor lock-in. Apache-2.0 throughout (code + weights), matching ecosystem norm and maximizing adoption.
@@ -344,6 +348,18 @@ No cloud spend budget needed for this plan as it stands. If the server ever beco
 - **Weights**: same, published on Hugging Face, all tiers, full-precision + quantized.
 - **Training data**: publish sources/mix (Section 5.3) and any harness-derived data we generate ourselves; do not redistribute any dataset whose license forbids it — audit before publishing.
 - **API compatibility posture**: stated explicitly in the README, mirroring Rizzo Flow's own disclaimer language — "reproduces Jev's interface pattern for interoperability; does not reproduce TypeSafe's proprietary architecture, weights, or RLCD training." This is both accurate and legally clean (thin JSON interfaces for interoperability are well-trodden ground, and three other projects already operate this exact way in the open without incident).
+
+---
+
+## 10a. Known limitations & responsible use
+
+Stated plainly, in one place, rather than left implicit:
+
+- **Calibrated is not the same as correct.** Section 1.3 already notes TypeSafe's own admission that Jev's "zero hallucination" means schema compliance, not truthfulness — it can be confidently wrong. The same is true of ekVachan by construction: temperature scaling and the Brier penalty (Section 5.3) make confidence scores *track* accuracy on average, they don't guarantee any single answer is right. A well-calibrated 90% confidence is still wrong 1 time in 10.
+- **Training data carries its own biases.** The Phase 1 data mix (Section 5.3) is sourced from public NLI corpora (ANLI/WANLI/MultiNLI/SNLI) plus harness-derived traces — none of it is bias-audited beyond the dedup/leakage filtering Section 5.3/the actual pipeline already does. A model fine-tuned on this data for **safety/policy/moderation decisions specifically** (an explicit ~15% slice of the data mix) should not be treated as a ground-truth arbiter without human review in the loop, especially for consequential or ambiguous cases — Section 8.1b's KoBBQ finding (forced answers on ambiguous items skew toward stereotype 79% of the time) is a reason to score abstention separately, not a reason to trust forced answers on hard cases.
+- **Self-hosting means the operator owns these tradeoffs.** Because this is self-hosted open-weight software, not a hosted product with a shared safety team behind it, whoever deploys it is responsible for appropriate review/human-in-the-loop design for their own use case — this is stated here so it isn't left as an unstated assumption.
+
+This is intentionally proportionate to the project's actual scale (a small, self-hosted, open-weight classifier) — not a claim that heavier processes (RLHF pipelines, dedicated red-teaming programs, external audits) are warranted here; those belong to a different class of system than this one.
 
 ---
 
