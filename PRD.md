@@ -1,7 +1,9 @@
 # PRD: Argus — an open, self-hostable, faster System One model
 
-Status: draft v0.1 · Owner: Niyati Singh · Date: 2026-09-22
+Status: draft v0.2 · Owner: Niyati Singh · Date: 2026-09-22
 Working codename for the model family: **Argus** (all-seeing watcher — fits a multimodal judge model; trivially renameable, not load-bearing).
+
+*v0.2 note: two independent research passes ran on this task in parallel and are merged here. This document's own research (Sections 1–14, unchanged) found `Von`, the architecture-reverse-engineering writeup, and the jabr-v2/ViZDoom benchmark trail. A second pass added the sections marked "(addendum, merged from a parallel research pass)" — JevBench (a second standardized leaderboard, Section 3.1a), conformal prediction as a calibration upgrade (5.3a), a concrete DAgger data-collection method for the game slice (5.3b), and two benchmark-design lessons (8.1a, 8.1b). Where the two passes disagree — notably, this PRD's Section 5.1 bets on encoder+heads while the second pass's independent research found the *opposite* architecture family dominating JevBench's leaderboard — that's flagged as an open question for Phase 1 to settle empirically (end of 3.1a), not silently resolved in either direction.*
 
 ---
 
@@ -113,7 +115,7 @@ Explicit non-goals of the primitive design, per TypeSafe's own docs: no long-for
 | Project | Approach | Base model | License | Key numbers | Gaps |
 |---|---|---|---|---|---|
 | **Von** (`wfzyx/von`) | Fine-tuned bidirectional encoder + classification heads | ModernBERT-Large, 395M, pretrained on 2T tokens | Apache-2.0, weights on HF (`wfzyx/von-1.0`) | jabr-v2 (49-task, 869-case OOD benchmark): **72.0% macro-acc**. ViZDoom *Defend the Center*: **9.00 kills** vs Jev's 5.62 (+60%). ViZDoom *Health Gathering*: **12.11s** vs Jev's **13.03s** — Jev is actually slightly ahead here, worth being precise about. Latency: **sub-18ms** local. | Degrades without explicit rubric text in `instructions`; no multimodal input; single dense model, no cascade; training corpus (~290k examples) is text-only |
-| **Rizzo Flow** | LLM logit-reading (prefill once, branch questions off shared KV-cache, read answer-letter logits A–Z, softmax) | Spark-X2.5 4B / 1.7B, Apache-2.0 | Apache-2.0 | 49–52ms p50/p95 (RTX 5060 Ti). 81.2–84.8% on own fixtures — **authors explicitly claim no superiority over their own "SemIf" baseline**. Jev-compatible `/v1/systemone` endpoint. | Max 26 options (Jev/Von support 255). Confidently wrong on 6/36 missing-evidence cases (SemIf: 1/36). Single-platform tested (Windows/CUDA only). No rate limiting, single resident model, requests serialize. |
+| **Rizzo Flow** | LLM logit-reading (prefill once, branch questions off shared KV-cache, read answer-letter logits A–Z, softmax) | Spark-X2.5 4B / 1.7B, Apache-2.0 | Apache-2.0 | 49–52ms p50/p95 (RTX 5060 Ti). 81.2–84.8% on own fixtures — **authors explicitly claim no superiority over their own "SemIf" baseline**. Jev-compatible `/v1/systemone` endpoint. One-command install (`uv run rizzo serve`, auto hardware backend detect, prebuilt sha256-verified binaries) — genuinely good DX, worth matching regardless of which architecture we ship. | Max 26 options (Jev/Von support 255). **Uncalibrated probabilities by default** — needs a separate calibration pass. Confidently wrong on 6/36 missing-evidence cases (SemIf: 1/36). Residual position bias despite shuffling. Single-platform tested (Windows/CUDA only) — macOS/Metal and Linux/AMD explicitly untested. No rate limiting, single resident model, requests serialize. KV-cache footprint ~144 KiB/token, ~4× worse than their own prior MLX runtime. Not on the JevBench leaderboard (self-reported fixtures only). |
 | **Kev** (`jaredpalmer/kev`) | Same encoder-classification pattern | Qwen3.5-based, 0.8B/4B/9B | Apache-2.0 | ~160ms for 6-question batch on Apple Silicon; trains in ~1h45m on Apple Silicon | Smaller/slower than Von at comparable accuracy tier; less benchmark disclosure |
 | **open-alternative-jev** (`ikermoel`) | Logit-reading over *any* open-weights LLM via HF or vLLM (needs single-token option labels + ChatML) | Tested Qwen 0.5B–27B | Apache-2.0 | Qwen3.6-27B-8bit: 73.7% acc / ECE 0.020 / 582ms/case on a community benchmark — beats a reported Jev-1.13.0 number (72.7% acc, but ECE only 0.020 vs Jev's much worse calibration, KL 0.27 vs 1.44) **on that specific benchmark only**. Packed mode: 2.5× cheaper but 6–9% answer drift below 4B params. | 582ms is *slower* than both Jev and Von — this approach trades latency for "works on anything you already run." Not competitive on speed. |
 | **Laya** | Fine-tuned encoder, calibration-focused | ModernBERT-large, 421M | — | Only alt publishing ECE directly: 0.081 post temp-scaling. ~16ms. 2.2k★ | Smaller ecosystem, less benchmark breadth than Von |
@@ -121,6 +123,31 @@ Explicit non-goals of the primitive design, per TypeSafe's own docs: no long-for
 | Wrappers (openjev-sglang, Decider, litjev) | Same logit-reading idea on Qwen3.5 | Qwen3.5 2B–35B | — | "Not calibrated estimates of correctness" per landscape page | Interface-only reproductions, not real competitors on quality |
 
 General-purpose typed-output tooling people compare against (not System-One-specific, but adjacent): **DSPy** (38k★), **Outlines** (16k★), **Instructor** (14k★) — these do grammar-constrained/validated structured output over any LLM, not calibrated probability readouts. Different tool, same "avoid free-text parsing" instinct.
+
+### 3.1a Addendum: JevBench — a second, independently-maintained standardized leaderboard (merged from a parallel research pass)
+
+Separately from the landscape catalogue above, there's a third-party, MIT-licensed benchmark harness — **JevBench** ([fstandhartinger/jevbench](https://github.com/fstandhartinger/jevbench)) — that's already become the field's shared yardstick: 534 frozen decisions, four axes (**Intelligence**, **Calibration**, **Speed**, **Cost**), combined by **geometric mean** at 25% each, with an explicit anti-gaming ruleset (held-out items committed before any run, no schema repair, no retries, label-mapping frozen before execution). Worth running *in addition to* jabr-v2/ViZDoom/StarCraft (Section 8), not instead of — it's a different, complementary evidence trail with its own credibility (independent maintainer, public methodology, other entrants already on it).
+
+Current top-10 (v1.2–1.3):
+
+| Rank | System | Score | Intel | Calib | Speed | Cost |
+|---|---|---|---|---|---|---|
+| 1 | Jev 1.13.0 (hosted) | 74.4 | 86 | 83 | 83 | 52 |
+| 2 | **SemIf**, Qwen3.5-4B ([TheoLeeCJ](https://github.com/TheoLeeCJ/SemIf)) | 73.1 | 79 | 73 | 84 | 60 |
+| 3 | **djev**, DiffusionGemma ([mmastrac](https://github.com/mmastrac/djev)) | 73.0 | 83 | 65 | 91 | 58 |
+| 4 | Winnow-12B Q8 | 71.2 | 82 | 72 | 82 | 53 |
+| 5 | **reflex-4B**, Qwen3.5 ([kshetrajna12](https://github.com/kshetrajna12/reflex)) | 70.3 | 80 | 75 | 68 | 60 |
+| 11 | OpenJev (razorback16) | 66.4 | 79 | 65 | 83 | 46 |
+| 19/27 | kev 0.6B / 4B | 62.5 / 59.7 | 52/65 | 51/42 | 76/76 | 76/62 |
+| 33 | **Laya**, ModernBERT-large (421M encoder) | 54.4 | 46 | 62 | 71 | 86 |
+
+`Von` was not visible in JevBench's top 10 in this pass — I did not confirm whether it's ranked lower or simply not submitted; don't treat that as evidence either way without checking `jevbench`'s full results directly.
+
+**A real tension worth flagging rather than resolving silently**: on *this* benchmark, the architecture family that dominates the top 5 is exactly the one Section 5.1 rejects — small **decoder** LLMs (Qwen3.5-4B class) read via restricted-logit scoring, not fine-tuned bidirectional encoders. The one pure-encoder entrant on the board, Laya (ModernBERT-large, the same weight class Section 5.2 sizes `argus-base` at), lands at rank 33 with an Intelligence score of 46 — *below* JevBench's own chance-adjusted floor of 50, which triggers a squared penalty (`total × (Intelligence/50)²`) on top of an already-weak raw score. That's a structural, not incidental, result: JevBench's Intelligence axis spans harder/judge-tier reasoning-shaped decisions where a small bidirectional classifier without a language-model backbone appears to lose real ground, independent of Von's own (different) benchmark showing an encoder winning on ViZDoom.
+
+This isn't a reason to reverse Section 5.1's decision on the strength of one leaderboard — Von's numbers are real too, and jabr-v2/ViZDoom test a different, more game/action-shaped distribution than JevBench's text-decision-heavy set. But it is a reason to **treat 5.1 as a hypothesis the Phase 1 benchmark run needs to actually stress-test on JevBench specifically, not just on jabr-v2** — if `argus-base` lands near Laya's Intelligence score on JevBench's harder tiers, that's a real signal the encoder bet needs a language-model-backboned variant (closer to the reflex/SemIf recipe: LoRA-tune a small Qwen3.5, read restricted next-token logits, skip building classification heads from scratch) for the tiers where reasoning-shaped judgment matters, even if the pure encoder stays the latency-optimal choice for simple/fast game-tick decisions. Recommendation: **run both families on JevBench in Phase 1 before locking 5.1 in as final** — the cost of testing this is a few LoRA-training-hours (Section 9), trivial next to the cost of discovering it post-launch.
+
+If the decoder family does turn out to matter for a tier, note for Section 7: that family's dominant technique (encode `state` once into a KV cache, branch each question off a restricted-token read) is a close structural match for **SGLang's RadixAttention** (automatic prefix-cache sharing across requests with a common prefix) — a serving-engine option worth having on the shortlist alongside the Rust/ONNX/TensorRT stack Section 7.1 already commits to for the encoder tiers, if/when a decoder-backboned tier gets added.
 
 ### 3.2 What this means for us
 1. **The floor is already high.** A weekend project (`Von`) beats Jev's own headline game benchmark. Don't scope "beat Jev" as the finish line.
@@ -190,6 +217,14 @@ Rationale for sizing at the small end (not chasing Kev's 9B or an even bigger mo
 - Vision tier: contrastive/paired (screenshot region ↔ DOM element, game frame ↔ action) data generated by instrumenting the same public harnesses — cheap to produce because the harnesses already exist and are scriptable.
 - Everything about this training recipe gets published (data sources, loss function, hyperparameters, eval harness) — this is itself a differentiator, since Jev's RLCD is proprietary and even Von doesn't fully disclose data provenance beyond category percentages.
 
+### 5.3a Calibration upgrade path: conformal prediction (addendum, architecture-agnostic)
+
+Section 5.3's cross-entropy + Brier + temperature-scaling recipe is the right default — it's what every credible entrant in this space ships (reflex, Laya, Von all use some form of it) and it's cheap. Worth adding on top, as an *opt-in* response mode rather than the default: **split-conformal prediction** on a held-out calibration set, returning a prediction set with a stated coverage guarantee ("the true answer is in this set with ≥95% probability, provably, not just empirically calibrated") instead of a single point probability. This is a genuinely different claim from temperature scaling — temperature scaling makes a confidence number locally honest on average; conformal prediction gives a per-call guarantee. It's unclaimed territory in this ecosystem (the awesome-jev catalogue lists one exploratory project, `jev-certify`, probing conformal routing thresholds, but nobody ships it as a first-class, tested primitive) and directly answers rizzo-flow's own documented weak point above ("uncalibrated by default... weak abstention"). Cheap to add regardless of which architecture 5.1 lands on — it wraps *any* model's output distribution, doesn't require retraining.
+
+### 5.3b Data-collection method for the game/computer-use slice (addendum)
+
+Section 5.3's data mix already earmarks ~15% for "game/computer-use decision traces... replayed and relabeled" — worth being concrete about *how*, since static replay of existing harness logs will under-cover the actual on-policy distribution our model will face. `PlayJev` (an independent 0.8B model trained to play ten browser games from raw pixels, [OmniJev/PlayJev](https://github.com/OmniJev/PlayJev)) used a proven two-stage recipe worth adopting for this slice specifically: (1) behavior-clone one epoch over teacher-labelled frames, then (2) two rounds of **DAgger** (the student plays, a teacher relabels every frame the student actually visited, retrain on the aggregated set) — this closes the distribution-shift gap that pure offline replay leaves open, which matters most exactly where Jev itself is documented to struggle (Section 1.4's Minecraft finding: solo System One models loop/fixate without on-policy correction). Apply this to whichever harness(es) Section 8 targets (ViZDoom, StarCraft, the browser-use flight task) before relying on their logs as training data.
+
 ### 5.4 What we are *not* speculating on
 We will not claim to have reverse-engineered or replicated Jev's actual internals. Section 1.1's architecture hypothesis is explicitly someone else's medium-confidence guess. Our architecture is our own documented decision (5.1–5.3), not an attempt to clone an unknown black box.
 
@@ -244,8 +279,14 @@ This is the section that makes G3/G7 falsifiable instead of a slogan.
 4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap Argus in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
 5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable.
 
+### 8.1a JevBench as an additional standing benchmark (addendum)
+Add JevBench (Section 3.1a) to the standing suite alongside jabr-v2/ViZDoom/StarCraft/browser-use — it's a third-party-maintained, MIT-licensed, already-public leaderboard, which makes a result there harder to dismiss as self-graded than a benchmark we run entirely ourselves. Its own anti-gaming ruleset is worth adopting as a template for 8.2 regardless of which benchmark it's applied to: held-out items and label-mappings committed *before* any run starts, no schema-repair retries, no per-model spending exceptions, one shared budget across all runs.
+
+### 8.1b A benchmark-design lesson from an existing audit (addendum)
+An independent KoBBQ audit of hosted Jev found it answers "unknown" on 95% of *deliberately ambiguous* items — worth citing here not as a knock on Jev but as a caution for our own eval design: with the ambiguous-item gold label removed, forced-choice accuracy on that slice is trivially 0%, and forcing an answer anyway pushed the model toward the dataset's stereotype 79% of the time. Section 8's own accuracy numbers (jabr-v2, ViZDoom) should score **abstention separately from forced-choice correctness** wherever the harness allows an "insufficient evidence" response — conflating the two makes a well-calibrated model that correctly declines to guess look worse than a model that guesses confidently and wrong, which is exactly backwards for a project whose stated differentiator is calibration.
+
 ### 8.2 Evidence discipline
-Every benchmark run ships as a signed evidence bundle (raw outputs, seeds, prompt/state hashes, weight hash, timestamp) in `results/` — matching the norm this ecosystem has already converged on (Rizzo Flow's evidence traces, jabr-v2's "frozen benchmark" design, HEIST//ONE's evidence traces). This is non-negotiable for credibility in a field this benchmark-literate.
+Every benchmark run ships as a signed evidence bundle (raw outputs, seeds, prompt/state hashes, weight hash, timestamp) in `results/` — matching the norm this ecosystem has already converged on (Rizzo Flow's evidence traces, jabr-v2's "frozen benchmark" design, HEIST//ONE's evidence traces, JevBench's frozen-and-hashed test cases). This is non-negotiable for credibility in a field this benchmark-literate.
 
 ### 8.3 What "we proved it" means in practice
 A claim like "Argus beats Jev at StarCraft" is only true once section 8.1's harness has actually run and the evidence bundle is in the repo. Until then, it's a target, and the README must say so.
@@ -320,6 +361,7 @@ Code (`server/`, `training/`, `eval/`, SDKs, etc.) is intentionally **not** scaf
 1. GPU provider preference for Phase 1 (RunPod / Lambda / Vast.ai / other) — no strong reason to prefer one from research; pick based on whichever you already have billing set up with.
 2. Hugging Face org name for published weights (affects branding/URLs — e.g. is "argus" available, or do you want a different model-family name entirely).
 3. Confirm license file check (Section 7.4) before we fork any of `browser-use/jev-ultrafast`, `tsai-sc`, or HEIST//ONE's code — want me to do that check now, or hold until Phase 2 when we actually need the harness?
+4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
 
 ---
 
@@ -329,3 +371,5 @@ Jev / TypeSafe: [typesafe.ai launch post](https://typesafe.ai/blog/introducing-s
 Demos: [browser-use/jev-ultrafast repo](https://github.com/browser-use/jev-ultrafast) · [explainx.ai](https://www.explainx.ai/blog/jev-ultrafast-browser-use-typesafe-2026) · [phyous/tsai-sc](https://github.com/phyous/tsai-sc) · [MindStudio computer-use demos](https://www.mindstudio.ai/blog/jev-computer-use-minecraft-robotics-demos)
 
 Open alternatives: [Von](https://github.com/wfzyx/von) · [Rizzo Flow](https://github.com/Rizzo-AI-Academy/rizzo-flow) · [Kev](https://github.com/jaredpalmer/kev) · [open-alternative-jev](https://github.com/ikermoel/open-alternative-jev) · [systemonemodels.org landscape](https://systemonemodels.org/examples/alternatives/) · [awesome-typesafe-jev](https://github.com/AbdelStark/awesome-typesafe-jev)
+
+Merged from a parallel research pass (Section 3.1a, 5.3a, 5.3b, 8.1a, 8.1b): [JevBench harness](https://github.com/fstandhartinger/jevbench) · [JevBench leaderboard](https://benchmarkheaven.com/jev-models) · [SemIf](https://github.com/TheoLeeCJ/SemIf) · [djev](https://github.com/mmastrac/djev) · [reflex](https://github.com/kshetrajna12/reflex) · [reflex-qwen3.5-4b-lora weights](https://huggingface.co/kshetrajna12/reflex-qwen3.5-4b-lora) · [PlayJev](https://github.com/OmniJev/PlayJev) · [PlayJev weights](https://huggingface.co/OmniJev/PlayJev-0.8B)
