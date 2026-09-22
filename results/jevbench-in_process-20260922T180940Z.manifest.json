@@ -1,0 +1,49 @@
+{
+  "benchmark": "jevbench",
+  "run_id": "jevbench-in_process-20260922T180940Z",
+  "timestamp_utc": "2026-09-22T18:09:40Z",
+  "seed": 0,
+  "harness_git_commit": "fdcfc944167c4109bac6c8b4555e8afde3e11732",
+  "dataset": {
+    "source_repo": "https://github.com/fstandhartinger/jevbench",
+    "license": "MIT (repo-level license verified via GitHub API 2026-09-22; every vendored record also carries its own provenance.license == \"MIT\" field)",
+    "vendored_files": [
+      "easy.jsonl",
+      "hard.jsonl",
+      "original.jsonl"
+    ],
+    "n_public_items": 231,
+    "n_total_incl_heldout": 534,
+    "note": "231 of JevBench v1.2's 534 total decisions are public (original 72, easy 48, hard 111); the remaining 303 (heldout 24, router 78, judge 68, easy-heldout 24, 109 more hard items) are deliberately unpublished by upstream and cannot be vendored here -- see benchmarks/jevbench/README.md."
+  },
+  "schema_filter": {
+    "checkpoint_labels": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "unsupported_reasons": {
+      "question_type='noul' (checkpoint only has a 'choice' head)": 74,
+      "'choice' options != checkpoint's fixed schema ['entailment', 'neutral', 'contradiction']": 139,
+      "question_type='score' (checkpoint only has a 'choice' head)": 18
+    }
+  },
+  "model": {
+    "instantiated": false,
+    "backend_requested": "in_process",
+    "reason": "0 items in this run matched the checkpoint's fixed schema -- no model needed to be loaded to know that (see benchmarks/common/schema.py)."
+  },
+  "results": {
+    "n_items_considered": 231,
+    "n_supported_by_fixed_schema": 0,
+    "n_unsupported": 231,
+    "n": 0,
+    "accuracy": null,
+    "brier": null,
+    "ece": null,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt (a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted -- as of this checkpoint that has never happened (PRD.md Section 10a); read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jevbench-in_process-20260922T180940Z.raw",
+  "harness_selftest": false
+}

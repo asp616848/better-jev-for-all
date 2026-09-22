@@ -1,0 +1,29 @@
+# Synthetic fixture authored in this repo for harness self-test -- NOT real
+# jabr-v2 data. Mirrors serve/inference.py's own smoke-test examples, cast
+# into jabr-v2's real TOML task/case format so --selftest also exercises the
+# actual TOML loader, not a shortcut around it. See
+# benchmarks/jabr_v2/README.md.
+
+[[task]]
+id = "selftest_nli"
+type = "choice"
+
+[task.question]
+instructions = "Given a premise and a hypothesis, determine whether the hypothesis is entailed by the premise (must be true if the premise is true), neutral (could be true or false), or contradicted by the premise (cannot be true if the premise is true)."
+criteria = { entailment = "Must be true if the premise is true", neutral = "Could be true or false given the premise", contradiction = "Cannot be true if the premise is true" }
+
+[[task.cases]]
+state = "Premise: The cat sat on the mat.\nHypothesis: An animal was on the mat."
+expected = "entailment"
+
+[[task.cases]]
+state = "Premise: The cat sat on the mat.\nHypothesis: The dog was outside."
+expected = "neutral"
+
+[[task.cases]]
+state = "Premise: The cat sat on the mat.\nHypothesis: No animal was on the mat."
+expected = "contradiction"
+
+[[task.cases]]
+state = "Premise: Every employee must badge in before 9am.\nHypothesis: Employees are required to badge in."
+expected = "entailment"

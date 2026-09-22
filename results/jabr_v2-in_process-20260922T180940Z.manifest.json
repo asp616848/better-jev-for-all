@@ -1,0 +1,51 @@
+{
+  "benchmark": "jabr_v2",
+  "run_id": "jabr_v2-in_process-20260922T180940Z",
+  "timestamp_utc": "2026-09-22T18:09:40Z",
+  "seed": 0,
+  "harness_git_commit": "fdcfc944167c4109bac6c8b4555e8afde3e11732",
+  "dataset": {
+    "source_repo": "https://github.com/jabr/classifier-benchmark",
+    "license": "CC0 1.0 Universal (public domain) -- verified by reading LICENSE at the repo root 2026-09-22; GitHub's API license-detector mislabels it 'other' because of a short prose preamble before the standard CC0 legal text.",
+    "vendored_files": [
+      "v1.toml",
+      "v2.toml"
+    ],
+    "n_items": 944,
+    "suites": {
+      "v1": "8 tasks / 78 cases, upstream-locked (cases/hashes.json)",
+      "v2": "49 tasks / 866 cases as actually vendored 2026-09-22 -- 3 fewer than the 869 the repo's own README/results/v1v2-summary.md report, because v2.toml is upstream 'under review' / unlocked (no hash pin yet) and has apparently drifted since that summary was generated: commit_intent has 15 cases here vs 16 published, grammar_issue 21 vs 22, fair_housing_violation 18 vs 19. See benchmarks/jabr_v2/README.md."
+    },
+    "correction": "PRD.md Section 8.1 was written assuming jabr-v2 had no confirmed public repo. It does: github.com/jabr/classifier-benchmark, linked directly from Von's own README as 'the jabr v2 benchmark'."
+  },
+  "schema_filter": {
+    "checkpoint_labels": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "unsupported_reasons": {
+      "'choice' options != checkpoint's fixed schema ['entailment', 'neutral', 'contradiction']": 387,
+      "question_type='noul' (checkpoint only has a 'choice' head)": 337,
+      "question_type='score' (checkpoint only has a 'choice' head)": 220
+    }
+  },
+  "model": {
+    "instantiated": false,
+    "backend_requested": "in_process",
+    "reason": "0 items in this run matched the checkpoint's fixed schema -- no model needed to be loaded to know that (see benchmarks/common/schema.py)."
+  },
+  "results": {
+    "n_items_considered": 944,
+    "n_supported_by_fixed_schema": 0,
+    "n_unsupported": 944,
+    "n": 0,
+    "accuracy": null,
+    "brier": null,
+    "ece": null,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt (a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted -- as of this checkpoint that has never happened (PRD.md Section 10a); read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jabr_v2-in_process-20260922T180940Z.raw",
+  "harness_selftest": false
+}
