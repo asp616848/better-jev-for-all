@@ -126,7 +126,12 @@ class DecoderChoiceModel:
 
 
 def load_default_decoder() -> DecoderChoiceModel:
-    return DecoderChoiceModel(REPO_ROOT / "checkpoints" / "ekvachan-decoder-qwen-wideschema")
+    # Points at the most recent validated checkpoint, not necessarily the first decoder one --
+    # ekvachan-decoder-qwen-primitives (PRD 13a.8) is a superset of ekvachan-decoder-qwen-wideschema's
+    # (13a.6) choice capability (95.73% vs 96.10% on the same CLINC150 zero-shot regression check --
+    # noise-level difference) plus a first pass at noul/score training, so it's strictly the better
+    # default even though serve/ doesn't answer noul/score yet.
+    return DecoderChoiceModel(REPO_ROOT / "checkpoints" / "ekvachan-decoder-qwen-primitives")
 
 
 if __name__ == "__main__":
