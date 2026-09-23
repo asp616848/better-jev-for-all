@@ -439,16 +439,24 @@ Still **not** built, and deliberately so at this stage: the Rust/ONNX production
   - ✅ Decoder comparison arm (`training/train_decoder_lora.py`, the Qwen3.5-4B restricted-logit variant 3.1a/5.1 asked for) — **finished and it won**: 92.25% / 0.0232 raw ECE on a 60k-example subset, vs. the encoder's 86.32% / 0.0344 on 20× the data (13a.2). 13a explains why it's a subset.
   - ✅ Schema-general `choice` via the decoder — `training/train_decoder_lora_multischema.py` then `..._wideschema.py` (`MAX_OPTIONS=26`): **96.10% zero-shot on a genuinely unseen wide 15–26-way schema** (13a.6). This is the capability 13a.4 point 2 called a Phase 1 blocker, reached through training data rather than a 5.1a architecture change.
   - ✅ Architecture decision locked — **decoder is primary** (Section 14 Q4, 2026-09-23). 5.1's encoder-first framing is superseded.
-  - 🔄 Compatibility-layer server (`serve/`) — `POST /v1/systemone` works end to end, but **only against the superseded encoder checkpoint** and its one fixed `choice` schema (6.1, 10a). The chosen decoder architecture is **not wired into `serve/` at all**; this is the repo's top open item (`STATUS.md`).
-  - 🔄 jabr-v2 and JevBench, with evidence bundles in `results/` — **harnesses built, vendored, and run for real** (13a.7): JevBench 83.45% on 139/231 schema-answerable items, jabr-v2 88.89% on 387/944. Still **not** a competitive claim against Von or Jev — neither is a complete benchmark score, and the unattempted remainder is all `score`/`noul` (see 13a.7 and the caveat under Phase-1 exit, below). G3 is testable now, not met.
-  - ❌ ViZDoom, StarCraft, and browser-use/jev-ultrafast benchmarks (8.1 items 2–4) — not started, no harness code.
-  - ❌ `score` and `noul` primitives — **no model trained for either**, which is precisely what puts 92/231 JevBench and 557/944 jabr-v2 items out of reach (13a.7).
-  - ❌ Weights published to Hugging Face — not yet.
-- **Phase 2**: `ekvachan-nano` + cascade serving, ViZDoom + StarCraft harness integration, latency benchmark publication. Not started.
-- **Phase 3**: `ekvachan-vision`, browser-use/jev-ultrafast swap-in benchmark, fine-tuning pipeline (G6), full SDK (Python + TS). Not started.
-- **Phase 4 (stretch)**: `ekvachan-large` third tier, if and only if cascade benchmarking shows a real accuracy ceiling the first two tiers can't clear. Not started.
+  - ✅ Compatibility-layer server (`serve/`) — `POST /v1/systemone` now defaults to the decoder (`serve.inference.DecoderChoiceModel`), verified end to end over real HTTP: 87-109ms warm latency, any 2-26 option `choice` request, `score`/`noul` correctly 501 (13a.8).
+  - 🔄 jabr-v2 and JevBench, with evidence bundles in `results/` — **harnesses built, vendored, and run for real** (13a.7): JevBench 83.45% on 139/231 schema-answerable items, jabr-v2 88.89% on 387/944. Still **not** a competitive claim against Von or Jev — neither is a complete benchmark score. G3 is testable now, not met.
+  - ❌ ViZDoom, StarCraft, and browser-use/jev-ultrafast benchmarks (8.1 items 2-4) — not started, no harness code. **Deliberately resequenced (2026-09-23, owner-directed) to run after the bench-driven retrain below**, not before -- Von's own headline numbers are ViZDoom-based, so this is the real head-to-head, and it should reflect the wider-data model, not today's narrow one.
+  - ✅ `score` and `noul` primitives — **first training run complete** (13a.8): `noul` 88.80%, `score` 75.40% (diagnosed as genuine task-boundary difficulty, not a broken mechanism -- see 13a.8's confusion-matrix follow-up). Narrow (one dataset each) -- widening this is precisely what better-jev-bench's Tier-A pull is for, per the resequencing below.
+  - ❌ Weights published to Hugging Face -- not yet.
+- **Phase 2, resequenced 2026-09-23 (owner-directed) -- bench-first, not tier-first:**
+  1. **better-jev-bench**: loader/plugin framework, CI gates, automated download/processing for the ~51 already-catalogued Tier-A datasets -- made genuinely easy to point at for training or benchmarking, not just a license-tiered list. See `better-jev-bench/STATUS.md`.
+  2. **Retrain the base decoder** on the resulting wider corpus -- more/wider `choice`/`noul`/`score` sources than today's two narrow primitive datasets.
+  3. **`ekvachan-vision`**: multimodal training data, likely the same 4B backbone (Qwen3.5 is natively multimodal) rather than a separate model -- see 5.2a.
+  4. **`ekvachan-nano`**: smaller tier, same bench-derived data mix.
+  5. **Game harnesses** (ViZDoom/StarCraft/browser-use/jev-ultrafast) run against the post-bench checkpoint -- the real Von comparison.
+  6. **Quantization** export + eval.
+  7. **Public release**: README/PRD/STATUS final pass, GitHub polish, announcement posts -- deliberately after 1-6, so the public story is backed by the wider-data model and a real Von comparison, not today's narrower one.
+- **Phase 3 (trails the public release, not a blocker for it)**: Rust/ONNX serving port (7.1) -- the real "faster than Jev" latency work; today's Python server (87-109ms) already proves the wire contract honestly with a stated target. Full SDK polish (6.3), `/v1/finetune` (6.2/G6).
+- **Phase 4**: cross-attention decision head (5.1a) -- demoted 2026-09-23; current mechanism already gets 83-89% on real benchmarks and its unique value (>26-option items) hasn't come up in any real benchmark data seen so far (widest real option count: 6, per 13a.5).
+- **Phase 5 (stretch, explicitly last, owner-directed)**: `ekvachan-large` third tier, only if cascade benchmarking (itself not yet built) shows a real accuracy ceiling the smaller tiers can't clear. No design work started.
 
-The original Phase 1 exit condition stands unchanged and is **not** met: ship when there's a real, evidence-backed number to compare against Von on a shared benchmark. 13a's numbers are on our own eval split, which is a floor to build on, not that comparison.
+The original Phase 1 exit condition is now **partially met, honestly scoped**: 13a.7 put a real, evidence-backed number against JevBench/jabr-v2 (not yet Von's own ViZDoom numbers, and not a complete-benchmark score) -- a floor, not the full comparison. The resequencing above is exactly the plan to close that gap for real, rather than publishing a comparison against a model that hasn't yet had the benefit of the wider bench data.
 
 ---
 

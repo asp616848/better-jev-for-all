@@ -48,23 +48,22 @@ Last verified: 2026-09-23 (independent review pass — see "Review log" at the b
 
 ## Next up, with GPU time estimates
 
-Anchor: this server's real Qwen3.5-4B LoRA runs took 65–75 min for 24k examples / 1 epoch. Single GPU, ~46GB VRAM (exact GPU model still unrecorded — see above).
+Anchor: this server's real Qwen3.5-4B LoRA runs took 65–75 min for 24k examples / 1 epoch. Single GPU, NVIDIA L40S, 46068 MiB VRAM.
 
-Reordered 2026-09-23 by the review pass. The load-bearing change: **`score`/`noul` training moves up and the cross-attention head moves down**, because the schema-filter manifests show the unattempted benchmark items are *entirely* a primitive-coverage problem, not an option-width problem — JevBench 74 `noul` + 18 `score` = exactly its 92 unsupported items; jabr-v2 337 `noul` + 220 `score` = exactly its 557. Zero items in either dataset are unsupported for exceeding the 26-option cap. A cross-attention head over option text does nothing for a scalar `score` or a `noul`, so it cannot be the unlock for those 649 items; training the missing primitives is.
+**Reordered 2026-09-23, owner-directed.** Prior order chased individual open questions (calibration, score's weak spot) as they surfaced — both now resolved (13a.9, PRD 13a.8 follow-up). This reorder is a bigger structural change: **better-jev-bench comes first**, on the reasoning that the model isn't actually done training (13a.8's own finding: `score`/`noul` are real but narrow, one dataset each) and a wider, automated, easy-to-use training/eval corpus is the right lever before spending more GPU hours or making any public comparison claim. Game harnesses (ViZDoom/StarCraft/browser-use) — the actual "beats Von" comparison, since Von's headline numbers are ViZDoom-based — now sit inside the vision/nano fine-tuning phase rather than as a standalone earlier item, since they're real evaluation work best done once the model has had the benefit of the wider bench data. Large tier is explicitly last (owner's call): a stretch/optional tier with no design work started at all.
 
-| # | Task | GPU time | Blocked on |
-|---|---|---|---|
-| 1 | ~~Commit training/eval manifests to `results/`; record the GPU model~~ | none | done 2026-09-23 |
-| 2 | ~~Wire decoder support into `serve/`~~ done (code); **re-measure real latency against the loaded checkpoint** still open | minutes, to benchmark | GPU free (training run below must finish first) |
-| 3 | Build `score` + `noul` training data, then train — **data built, training run launched** 2026-09-23 (`checkpoints/ekvachan-decoder-qwen-primitives`, log `~/ekvachan/primitives_run1.log`) | ~1–2 hrs, in progress | — |
-| 4 | Fix the decoder calibration procedure (13a.2 anomaly) | ~minutes to re-fit | no retrain needed — it's a post-hoc fitting bug |
-| 5 | Cross-attention head (5.1a), then train | ~1–2 hrs | dev work first; now an accuracy experiment + >26-option insurance, not the critical path |
-| 6 | Nano tier training | ~30–60 min | data mix decision |
-| 7 | Vision tier | ~1–2 hrs | data pipeline (non-GPU) first |
-| 8 | Game harness wiring + eval | <30 min/harness | harness integration (non-GPU) first |
-| 9 | Quantization export + eval | ~10–20 min | a serving target to quantize — i.e. #2 |
-| 10 | Large tier (optional/stretch) | ~5–6 hrs | cascade proving it's needed |
-| 11 | ONNX/Rust port validation | ~10–20 min | the port itself (non-GPU) |
+| # | Phase | Task | GPU time | Notes |
+|---|---|---|---|---|
+| 1 | **better-jev-bench** | Build the loader/plugin framework, CI validation gates, and automated download/processing pipeline for the ~51 Tier-A datasets; make it genuinely easy to point at for benchmarking or training, not just cataloguing | none | see `better-jev-bench/STATUS.md` for the live checklist; the bulk of this is bandwidth/ETL work, not compute |
+| 2 | **Fine-tune: base** | Retrain the primary decoder on the wider bench corpus (more/wider `choice`/`noul`/`score` sources) | scales with pull size; rough estimate 2–6 hrs for a 50–200k example pull | blocked on #1 |
+| 3 | **Fine-tune: vision** | Add multimodal training data (text+image); likely the same 4B backbone (Qwen3.5 is natively multimodal), not a separate model — see owner's question about merging base/vision | ~1–2 hrs | blocked on a vision data pipeline (non-GPU work first) |
+| 4 | **Fine-tune: nano** | Smaller model, same bench-derived data mix | ~30–60 min | blocked on #1-3 landing first (data mix reuses their work) |
+| 5 | **Game harnesses** | ViZDoom/StarCraft/browser-use, run against whichever checkpoint is current at this point in the sequence — the actual head-to-head with Von | <30 min/harness compute; integration work is non-GPU | this is the real "how do we compare to Von" milestone, deliberately placed after the bench-driven retrain so the comparison reflects the improved model, not the narrow one |
+| 6 | **Quantization** | Export + eval | ~10–20 min | needs a serving target — already have one (`serve/`) |
+| 7 | **Go public** | README/PRD/STATUS final pass, GitHub polish, announcement posts | none | after 1-6 land, so the public story is backed by the wider-data model and a real Von comparison, not the narrow one |
+| 8 | **Rust/ONNX port** | Real "faster than Jev" latency work | ~10–20 min GPU for validation; the port itself is non-GPU engineering | can trail the public release — current Python server (87-109ms) already proves the wire contract honestly with a stated target |
+| 9 | **Cross-attention head** (5.1a) | Accuracy experiment + >26-option insurance | ~1–2 hrs if pursued | low priority — current mechanism already gets 83-89% on real benchmarks; the widest real option count seen in any real benchmark data is 6, so the >26-option case it uniquely solves hasn't come up yet |
+| 10 | **Large tier** | 4-9B, only if a cascade design (not yet built) proves smaller tiers aren't enough | ~5-6 hrs if pursued | explicitly last — owner's call, no design work started |
 
 ## Review log
 
