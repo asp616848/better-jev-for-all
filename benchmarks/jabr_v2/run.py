@@ -14,6 +14,15 @@ Usage:
 
   # Harness wiring self-test -- synthetic fixture, no checkpoint needed:
   python -m benchmarks.jabr_v2.run --backend mock --selftest
+
+  # Real dataset, against a decoder/multischema checkpoint (PRD.md 13a.5 --
+  # e.g. training/train_decoder_lora_wideschema.py's output dir, once the
+  # wide-schema run lands):
+  python -m benchmarks.jabr_v2.run --backend decoder-multischema \\
+      --checkpoint-dir checkpoints/ekvachan-decoder-qwen-wideschema
+
+  # Multischema harness wiring self-test -- no checkpoint needed:
+  python -m benchmarks.jabr_v2.run --backend decoder-multischema-mock
 """
 
 from __future__ import annotations
