@@ -41,7 +41,7 @@ Last verified: 2026-09-23 (independent review pass — see "Review log" at the b
 - [ ] Quantization export (PRD 7.2)
 - [ ] Multi-tier model family: nano tier, vision tier, large tier (PRD 5.2/5.2a) — only base (encoder) + one 4B decoder exist
 - [ ] Conformal prediction calibration upgrade (PRD 5.3a)
-- [ ] Fix the decoder's calibration procedure (PRD 13a.2 anomaly) — temperature scaling makes the decoder's ECE/Brier *worse*; the logit surrogate is the suspected cause, still unconfirmed. Every decoder number in the repo currently uses raw probabilities because of this.
+- [x] **Decoder calibration anomaly resolved** (2026-09-23, PRD 13a.9) — it was never a bug. An oracle temperature sweep on real eval data confirms T=1.0 (raw) is already the global-optimum ECE/Brier; the "logit surrogate" hypothesis in 13a.2 doesn't hold up (the math is provably exact except for a negligible clipping artifact). The earlier fitted temperatures (0.86-1.15) were small-calibration-sample noise pulling a 1-D fit slightly off the true optimum, confirmed by refitting on a 3.3x larger pool and watching it move closer to 1.0. No code change needed — `DecoderMultischemaBackend`'s existing raw-by-default was already correct, now for a verified reason.
 - [ ] DAgger data collection method for the game/computer-use slice (PRD 5.3b)
 - [ ] Game/computer-use harnesses: ViZDoom, StarCraft (`tsai-sc`), browser-use/jev-ultrafast (PRD 8.1) — zero code
 - [ ] Cascade serving architecture, nano→base escalation (PRD 4.1 G5)
