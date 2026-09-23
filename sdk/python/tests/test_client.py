@@ -76,12 +76,17 @@ from ekvachan_client import EkVachanAPIError, EkVachanClient, Question  # noqa: 
 
 
 class FakeModel:
-    """Stands in for EncoderChoiceModel — same public contract
-    (`model_name`, `predict_choice`), no real weights or torch involved."""
+    """Stands in for the server's real model (DecoderChoiceModel by default
+    since 2026-09-23, EncoderChoiceModel before that) — same public contract
+    (`model_name`, `predict_choice(state, options, instructions=None)`), no
+    real weights or torch involved. Still exercises the fixed 3-way schema
+    for simplicity; the real server accepts 2-26 options now, but that's a
+    property of the real model, not something this HTTP-wiring test needs to
+    cover."""
 
     model_name = "ekvachan-base-fake"
 
-    def predict_choice(self, state: str, options: list) -> dict:
+    def predict_choice(self, state: str, options: list, instructions: str | None = None) -> dict:
         if list(options) != LABELS:
             raise ChoiceUnsupportedError(
                 f"this checkpoint only supports options=={LABELS}; got {options}"
