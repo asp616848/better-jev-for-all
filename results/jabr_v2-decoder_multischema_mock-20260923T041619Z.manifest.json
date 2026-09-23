@@ -1,9 +1,9 @@
 {
   "benchmark": "jabr_v2",
-  "run_id": "jabr_v2-decoder_multischema-20260923T082430Z",
-  "timestamp_utc": "2026-09-23T08:24:30Z",
+  "run_id": "jabr_v2-decoder_multischema_mock-20260923T041619Z",
+  "timestamp_utc": "2026-09-23T04:16:19Z",
   "seed": 0,
-  "harness_git_commit": "980dbfe6fa5320a8f3933af95f73fa9f0e9521e1",
+  "harness_git_commit": "8fa6378f4f080901aacdfb74022e3e9a5cfb5b95",
   "dataset": {
     "source_repo": "https://github.com/jabr/classifier-benchmark",
     "license": "CC0 1.0 Universal (public domain) -- verified by reading LICENSE at the repo root 2026-09-22; GitHub's API license-detector mislabels it 'other' because of a short prose preamble before the standard CC0 legal text.",
@@ -19,35 +19,29 @@
     "correction": "PRD.md Section 8.1 was written assuming jabr-v2 had no confirmed public repo. It does: github.com/jabr/classifier-benchmark, linked directly from Von's own README as 'the jabr v2 benchmark'."
   },
   "schema_filter": {
-    "checkpoint_labels": [
-      "entailment",
-      "neutral",
-      "contradiction"
-    ],
+    "max_options": 26,
     "unsupported_reasons": {
-      "question_type='noul' (decoder-multischema backend only has a 'choice' head)": 337,
-      "question_type='score' (decoder-multischema backend only has a 'choice' head)": 220
+      "question_type='noul' (no trained model for 'score'/'noul')": 337,
+      "question_type='score' (no trained model for 'score'/'noul')": 220
     }
   },
   "model": {
     "instantiated": true,
-    "backend": "decoder_multischema",
-    "base_model": "Qwen/Qwen3.5-4B",
+    "backend": "decoder_multischema_mock",
     "max_options": 26,
-    "temperature": 0.878669652732995,
-    "device": "cuda"
+    "note": "NOT a trained model -- a deterministic keyword-overlap heuristic used only to prove the multischema harness pipeline (filter -> call -> score -> evidence bundle) works end to end without torch, transformers, peft, or a checkpoint on disk."
   },
   "results": {
     "n_items_considered": 944,
-    "n_supported_by_fixed_schema": 387,
+    "n_supported_by_multischema_cap": 387,
     "n_unsupported": 557,
     "n": 387,
-    "accuracy": 0.8888888888888888,
-    "brier": 0.15064113190588227,
-    "ece": 0.03528943480755312,
+    "accuracy": 0.22739018087855298,
+    "brier": 0.784085517159228,
+    "ece": 0.03196875027006473,
     "is_complete_benchmark_score": false,
-    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt -- for the fixed-encoder backends, a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema; for decoder_multischema, any 'choice' item with 2..26 options whose expected answer is among them (see benchmarks/common/schema_filter.filter_supported_multischema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. Read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+    "note": "n_supported_by_multischema_cap is how many items a decoder/multischema model could legitimately attempt (a 'choice' item with between 2 and max_options=26 options, whose gold label is one of them). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a benchmark ranking."
   },
-  "raw_output_file": "jabr_v2-decoder_multischema-20260923T082430Z.raw",
+  "raw_output_file": "jabr_v2-decoder_multischema_mock-20260923T041619Z.raw",
   "harness_selftest": false
 }

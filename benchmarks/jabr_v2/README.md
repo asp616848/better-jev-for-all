@@ -71,6 +71,33 @@ $ python -m benchmarks.jabr_v2.run
 Ran with no checkpoint present and no torch/transformers installed, for the
 same reason as the JevBench harness — see `benchmarks/README.md`.
 
+## Update 2026-09-23: 387 of 944 are answerable under the decoder/multischema filter
+
+Same update as `benchmarks/jevbench/README.md`'s (see that file for the full
+PRD.md 14 Q4 / 13a.5 context). Filtering these 944 vendored items by the
+decoder/multischema rule (2-26 options, `filter_supported_multischema`)
+instead of the fixed-schema rule above:
+
+```
+$ python -m benchmarks.jabr_v2.run --backend decoder-multischema-mock
+{
+  "n_items_considered": 944,
+  "n_supported_by_multischema_cap": 387,
+  "n_unsupported": 557,
+  ...
+}
+```
+
+**387 of 944 — all 387 `choice` items — are now answerable**, up from 0. The
+557 unsupported are the 337 `noul` + 220 `score` items (no trained model for
+either). None were rejected for exceeding the 26-option cap — the widest
+option set across both suites has 6 options. Real, committed manifest:
+`results/jabr_v2-decoder_multischema_mock-*` (`--backend
+decoder-multischema-mock`, a non-trained stub, real vendored dataset, no
+`--selftest`). Once a wide-schema checkpoint exists, `--backend
+decoder-multischema --checkpoint-dir <path>` runs these same 387 items for a
+real score.
+
 ## How this was tested
 
 Same pattern as JevBench (see `benchmarks/jevbench/README.md`'s "How this
@@ -89,6 +116,12 @@ was tested" for the full explanation):
 3. **`HTTPBackend`** — same stdlib-mocked-server test as JevBench's harness;
    this backend's code is shared (`benchmarks/common/backends.py`) between
    both benchmarks, so it was verified once, not twice.
+4. **`--backend decoder-multischema-mock`, real dataset and `--selftest`** —
+   same pattern as JevBench's update above; this backend's code is also
+   shared between both benchmarks. Real 944-item dataset: 387/944 passed
+   `filter_supported_multischema`, no crashes
+   (`results/jabr_v2-decoder_multischema_mock-*`). Fixture: 4/4 passed
+   (`results/jabr_v2-selftest-decoder_multischema_mock-*`).
 
 ## Running
 
@@ -96,6 +129,10 @@ was tested" for the full explanation):
 python -m benchmarks.jabr_v2.run                                    # real data, in-process
 python -m benchmarks.jabr_v2.run --backend http --http-endpoint http://localhost:8000
 python -m benchmarks.jabr_v2.run --backend mock --selftest          # wiring self-test
+
+python -m benchmarks.jabr_v2.run --backend decoder-multischema \    # real data, decoder/multischema
+    --checkpoint-dir checkpoints/ekvachan-decoder-qwen-wideschema    # (PRD.md 13a.5, once it lands)
+python -m benchmarks.jabr_v2.run --backend decoder-multischema-mock # multischema wiring self-test
 ```
 
 ## What this harness does *not* do (yet)

@@ -67,6 +67,40 @@ docstring for why filtering doesn't need a live model, and
 `benchmarks/README.md` for what that means for reproducing this exact
 result yourself.
 
+## Update 2026-09-23: 139 of 231 are answerable under the decoder/multischema filter
+
+PRD.md Section 14 Q4 decided the decoder (Qwen3.5-4B LoRA, restricted-logit
+read) as the primary architecture; 13a.5 found real, statistically solid
+evidence its mechanism generalizes to option sets it never trained on, up to
+a real ceiling of 26 options (one per single-uppercase-letter token). Filtering
+these same 231 public items by *that* rule (`benchmarks/common/schema_filter.
+py`'s `filter_supported_multischema`, 2-26 options instead of one exact fixed
+list) instead of the fixed-schema rule above:
+
+```
+$ python -m benchmarks.jevbench.run --backend decoder-multischema-mock
+{
+  "n_items_considered": 231,
+  "n_supported_by_multischema_cap": 139,
+  "n_unsupported": 92,
+  ...
+}
+```
+
+**139 of 231 — all 139 `choice` items — are now answerable**, up from 0. The
+92 unsupported are the 74 `noul` + 18 `score` items (no trained model exists
+for either, decoder or encoder). None of JevBench's real `choice` items were
+rejected for exceeding the 26-option cap — the widest option set in this
+dataset has 6 options, well under it. This is the actual manifest committed
+alongside this change (`results/jevbench-decoder_multischema_mock-*`), from
+`--backend decoder-multischema-mock` (a non-trained keyword-overlap stub, the
+multischema analogue of `MockBackend` below — its accuracy is meaningless,
+only the *filter* count above is the real result) against the real vendored
+dataset, no `--selftest`. Once a wide-schema checkpoint exists (13a.5's
+follow-up run is in progress as of this writing), `--backend
+decoder-multischema --checkpoint-dir <path>` runs these same 139 items for a
+real score.
+
 ## How this was tested
 
 There's no checkpoint on disk in this environment (`checkpoints/` is
@@ -95,6 +129,16 @@ here. What *was* actually run, not just written:
    {"type":"choice","options":[...]}}}`) and response parsing
    (`results.decision.{choice,probabilities,confidence}`) both work, without
    needing FastAPI installed to prove it.
+4. **`--backend decoder-multischema-mock`, real dataset, no `--selftest`** —
+   the update above: real 231-item dataset, real `filter_supported_
+   multischema`, a non-trained keyword-overlap stub
+   (`DecoderMultischemaMockBackend`), real `eval/metrics.py` scoring, real
+   evidence bundle (`results/jevbench-decoder_multischema_mock-*`) — 139/231
+   passed the filter, no crashes, no torch/transformers/peft needed.
+   **`--backend decoder-multischema-mock --selftest`** was also run against
+   the synthetic fixture (`results/jevbench-selftest-decoder_multischema_
+   mock-*`) to confirm the same backend also works through the fixture-
+   loading path the original `mock --selftest` test above exercises.
 
 None of this is a JevBench score. It's a real, working harness that reports
 a real, honest 0 — and is ready to run for real (`--backend in_process`,
@@ -107,6 +151,10 @@ more than one fixed 3-way schema.
 python -m benchmarks.jevbench.run                                    # real data, in-process
 python -m benchmarks.jevbench.run --backend http --http-endpoint http://localhost:8000
 python -m benchmarks.jevbench.run --backend mock --selftest          # wiring self-test
+
+python -m benchmarks.jevbench.run --backend decoder-multischema \    # real data, decoder/multischema
+    --checkpoint-dir checkpoints/ekvachan-decoder-qwen-wideschema    # (PRD.md 13a.5, once it lands)
+python -m benchmarks.jevbench.run --backend decoder-multischema-mock # multischema wiring self-test
 ```
 
 ## What this harness does *not* do (yet)

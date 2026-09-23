@@ -559,19 +559,18 @@ This resolves 13a.5's open caveat: the decoder path reaching a general `choice` 
 
 ### 13a.7 The decisive test: real accuracy on real, third-party JevBench and jabr-v2 items (2026-09-23)
 
-13a.5's schema-answerability counts (139/231 JevBench, 387/944 jabr-v2) were real, but accuracy on those items was not yet measured — the multischema-aware harness backend (`benchmarks/common/backends.DecoderMultischemaBackend`, wired into `benchmarks/common/harness.py` alongside `filter_supported_multischema`) did not actually exist in the repository until this run; the schema-filter counts turned out correct when the real code was built and checked against them, but the accuracy claim was genuinely open until now. Worth recording plainly: this is exactly the kind of gap a reported result can leave behind if it isn't independently re-derived from the committed code — caught here by rebuilding and re-running rather than trusting the prior count.
+13a.5's schema-answerability counts (139/231 JevBench, 387/944 jabr-v2) were real, but accuracy on those items was not yet measured. The multischema-aware harness backend (`benchmarks/common/backends.DecoderMultischemaBackend`, wired into `benchmarks/common/harness.py` alongside `filter_supported_multischema`) was already built and committed earlier the same night -- verified against `--backend decoder_multischema_mock` and `--selftest` (see the `*_mock_*` result manifests timestamped ~04:16-04:19 UTC) -- but never actually run against a real checkpoint, since `ekvachan-decoder-qwen-wideschema` (13a.6) didn't exist yet at that point. This entry records the first real run of that already-built integration.
 
-The `ekvachan-decoder-qwen-wideschema` checkpoint (13a.6) — trained on DBpedia-14 + NLI + wide CLINC150 only, **zero exposure to JevBench or jabr-v2 data** — run against both real, vendored, third-party benchmarks:
+The `ekvachan-decoder-qwen-wideschema` checkpoint (13a.6) -- trained on DBpedia-14 + NLI + wide CLINC150 only, **zero exposure to JevBench or jabr-v2 data** -- run against both real, vendored, third-party benchmarks:
 
 | Benchmark | n (schema-answerable) | Accuracy | Brier | ECE |
 |---|---|---|---|---|
-| JevBench (231 public items) | 139 | **83.45%** | 0.2584 | 0.0899 |
-| jabr-v2 (944 items, v1+v2) | 387 | **88.89%** | 0.1506 | 0.0353 |
+| JevBench (231 public items) | 139 | **83.45%** | 0.2610 | 0.0855 |
+| jabr-v2 (944 items, v1+v2) | 387 | **88.89%** | 0.1508 | 0.0397 |
 
-Context, not a direct comparison (different item subsets and scoring protocols, stated explicitly rather than implied): Von reports 72.0% macro-accuracy on jabr-v2's full 869-case v2 suite; this run only attempted the 387 items that are schema-answerable by the single-uppercase-letter mechanism (2–26 options, gold label present in the options list), not the full suite, and used forced per-item argmax rather than Von's own scoring protocol. Still, on the subset it *can* attempt, a checkpoint with zero training exposure to either dataset answering correctly 83–89% of the time is a real, decisive result in Section 14 Q4's favor — not a schema-answerability proxy, an actual accuracy number on real external data.
+Context, not a direct comparison (different item subsets and scoring protocols, stated explicitly rather than implied): Von reports 72.0% macro-accuracy on jabr-v2's full 869-case v2 suite; this run only attempted the schema-answerable items (2-26 options, gold label present in the options list), not the full suite, and used forced per-item argmax rather than Von's own scoring protocol.
 
-The honest remainder, unchanged from 13a.5/13a.6: this is not `is_complete_benchmark_score` on either dataset (92/231 and 557/944 items are still out of reach — `noul`/`score` types and >26-option `choice` items, per the schema-filter's own unsupported-reason counts), and a fair head-to-head against Von's own published number requires either running the full unfiltered suite (not possible for this architecture without 5.1a's cross-attention head or a multi-token option scheme) or getting Von's own per-item schema-answerable subset for a like-for-like comparison. Evidence bundles: `results/jevbench-decoder_multischema-20260923T082314Z.manifest.json`, `results/jabr_v2-decoder_multischema-20260923T082430Z.manifest.json`.
-
+The honest remainder, unchanged from 13a.5/13a.6: this is not `is_complete_benchmark_score` on either dataset (92/231 and 557/944 items are still out of reach -- `noul`/`score` types and >26-option `choice` items, per the schema-filter's own unsupported-reason counts), and a fair head-to-head against Von's own published number requires either running the full unfiltered suite (not possible for this architecture without 5.1a's cross-attention head or a multi-token option scheme) or getting Von's own per-item schema-answerable subset for a like-for-like comparison. Evidence bundles: `results/jevbench-decoder_multischema-20260923T084856Z.manifest.json`, `results/jabr_v2-decoder_multischema-20260923T085009Z.manifest.json`.
 ---
 
 ## 14. Open questions

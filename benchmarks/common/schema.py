@@ -21,12 +21,29 @@ going stale.
 
 FIXED_CHECKPOINT_LABELS = ["entailment", "neutral", "contradiction"]
 
-# The variable-width sibling of FIXED_CHECKPOINT_LABELS above: the decoder/restricted-logit
-# checkpoints (training/train_decoder_lora_multischema.py, train_decoder_lora_wideschema.py)
-# are not tied to one fixed option list -- they read whichever single-uppercase-letter token
-# (A-Z) corresponds to the item's own option count, up to this cap. 26 is the real ceiling of
-# a single-uppercase-letter restricted-logit scheme (one token per letter), independently
-# verified against Qwen3.5-4B's tokenizer by train_decoder_lora_wideschema.py's own runtime
-# assertion (every letter A-Z is confirmed a single, mutually distinct token before that script
-# trains), not assumed here.
+# --- Decoder / multischema path (PRD.md Section 14 Q4, 13a.5) ---------------
+#
+# The decoder (Qwen3.5-4B LoRA, restricted-logit read) is architecturally not
+# fixed-width the way the encoder's classification head is: it answers a
+# `choice` question by reading the model's next-token logits restricted to a
+# small set of single-uppercase-letter tokens (A, B, C, ...), one per option,
+# masking the rest to exact -inf before softmax. That mechanism's real ceiling
+# is however many such letters exist as guaranteed single, mutually distinct
+# tokens under the base model's tokenizer -- verified (independently, on the
+# actual training server, 2026-09-23) to be all 26 of A-Z under Qwen3.5-4B's
+# tokenizer. See `training/train_decoder_lora_wideschema.py`'s `MAX_OPTIONS`
+# constant and its own runtime assertion (`assert len(ids) == 1` for every
+# letter), which re-checks this live on every training run -- that script is
+# the canonical source for this number, duplicated here as a plain literal for
+# exactly the reason FIXED_CHECKPOINT_LABELS above is: filtering benchmark
+# items by option count is cheap, dataset-only work that must not require
+# torch/transformers/peft to be installed, and that script isn't even vendored
+# on this branch (it landed via a parallel workstream -- PRD.md 13a.5).
+#
+# Unlike FIXED_CHECKPOINT_LABELS, this is only a *default* cap used when
+# filtering happens before any backend is instantiated (this module's whole
+# reason to exist). A real DecoderMultischemaBackend reports its own loaded
+# checkpoint's `max_options` from its manifest, and benchmarks/common/
+# harness.py cross-checks that against whatever cap was used to filter before
+# trusting the run -- same discipline as the FIXED_CHECKPOINT_LABELS check.
 DECODER_MULTISCHEMA_MAX_OPTIONS = 26
