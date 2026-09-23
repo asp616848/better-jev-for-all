@@ -54,7 +54,7 @@ Anchor: this server's real Qwen3.5-4B LoRA runs took 65–75 min for 24k example
 
 | # | Phase | Task | GPU time | Notes |
 |---|---|---|---|---|
-| 1 | **better-jev-bench** | Build the loader/plugin framework, CI validation gates, and automated download/processing pipeline for the ~51 Tier-A datasets; make it genuinely easy to point at for benchmarking or training, not just cataloguing | none | see `better-jev-bench/STATUS.md` for the live checklist; the bulk of this is bandwidth/ETL work, not compute |
+| 1 | **better-jev-bench** | Build the loader/plugin framework, CI validation gates, and automated download/processing pipeline for the ~51 Tier-A datasets; make it genuinely easy to point at for benchmarking or training, not just cataloguing | none | **framework + first 8 datasets done 2026-09-23** (see the cross-reference note under this table); ~43 Tier-A entries and the scoring implementation remain. See `better-jev-bench/STATUS.md` for the live checklist |
 | 2 | **Fine-tune: base** | Retrain the primary decoder on the wider bench corpus (more/wider `choice`/`noul`/`score` sources) | scales with pull size; rough estimate 2–6 hrs for a 50–200k example pull | blocked on #1 |
 | 3 | **Fine-tune: vision** | Add multimodal training data (text+image); likely the same 4B backbone (Qwen3.5 is natively multimodal), not a separate model — see owner's question about merging base/vision | ~1–2 hrs | blocked on a vision data pipeline (non-GPU work first) |
 | 4 | **Fine-tune: nano** | Smaller model, same bench-derived data mix | ~30–60 min | blocked on #1-3 landing first (data mix reuses their work) |
@@ -64,6 +64,51 @@ Anchor: this server's real Qwen3.5-4B LoRA runs took 65–75 min for 24k example
 | 8 | **Rust/ONNX port** | Real "faster than Jev" latency work | ~10–20 min GPU for validation; the port itself is non-GPU engineering | can trail the public release — current Python server (87-109ms) already proves the wire contract honestly with a stated target |
 | 9 | **Cross-attention head** (5.1a) | Accuracy experiment + >26-option insurance | ~1–2 hrs if pursued | low priority — current mechanism already gets 83-89% on real benchmarks; the widest real option count seen in any real benchmark data is 6, so the >26-option case it uniquely solves hasn't come up yet |
 | 10 | **Large tier** | 4-9B, only if a cascade design (not yet built) proves smaller tiers aren't enough | ~5-6 hrs if pursued | explicitly last — owner's call, no design work started |
+
+### Cross-reference: what better-jev-bench now provides for phase 2 (added 2026-09-23)
+
+*Written from the sibling repo's side of the boundary. Authoritative numbers live in
+`better-jev-bench`'s own `STATUS.md` and PRD §12 — re-derive from there rather than from this
+summary (dev-guidelines rule 3).*
+
+Roadmap phase 1 is far enough along that phase 2 is no longer blocked on it. As of 2026-09-23
+[better-jev-bench](https://github.com/asp616848/better-jev-bench) holds **422,878 normalised
+items across 8 Tier-A datasets and 11 tasks** — 278,513 in a public training slice and 21,174 in
+a frozen, hash-committed held-out slice. All four of its width strata (2 → 151 options) and all
+three primitives are populated.
+
+The part that matters for this repo specifically:
+
+- **`bjb export` emits this project's own record shape**, key for key —
+  `{state, question_key, question_type, instructions, options, label, label_idx, source}` — read
+  off `training/data.py` and `training/build_primitives_slice.py` rather than invented. Verified
+  by running `build_primitives_slice.py`'s own `_validate()` verbatim against a real export:
+  5,500 records, 0 failures. So a bench slice is drop-in for the next training run; no adapter,
+  no new builder script.
+- **Option-width narrowing to the 26-letter budget is handled on the bench side**, mirroring
+  `_sample_wide_subset()`. The bench stores CLINC150's true 151-way schema; the export narrows it.
+- **Ordinal `score` scales are never narrowed or shuffled**, and the bench's CI refuses to ship a
+  `score` task whose items disagree on scale order — the invariant
+  `build_primitives_slice.py`'s docstring argues for, enforced upstream.
+- **It directly addresses 13a.8's stated narrowness.** `score` and `noul` training here is
+  currently one dataset each (a 3-level sentiment set and one BoolQ split). The bench adds a
+  5-level ordinal `score` source built from real annotator-agreement fractions, and two `noul`
+  sources with opposite skew profiles (one balanced 50/50 by construction, one 92% negative).
+  Whether that moves the 75.40% `score` number is an open empirical question; neither repo
+  predicts it.
+
+What it does **not** yet provide: the scoring spec is still a specification — no `/v1/evaluate`,
+no axis scores, and no ekVachan checkpoint has been run against the corpus. The held-out slice is
+frozen and tamper-evident but not secret (its labels are in a public repo), so the usual caution
+about training on an eval set applies to whoever pulls it.
+
+Practical entry point for phase 2:
+
+```bash
+git clone https://github.com/asp616848/better-jev-bench && cd better-jev-bench && pip install -e .
+bjb build                                                   # regenerate the public slice
+bjb export --out exports/mix --tiers A --max-options 26     # -> exports/mix/public.jsonl
+```
 
 ## Review log
 
