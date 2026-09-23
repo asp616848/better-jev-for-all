@@ -1,0 +1,51 @@
+{
+  "benchmark": "jevbench",
+  "run_id": "jevbench-decoder_multischema-20260923T082314Z",
+  "timestamp_utc": "2026-09-23T08:23:14Z",
+  "seed": 0,
+  "harness_git_commit": "980dbfe6fa5320a8f3933af95f73fa9f0e9521e1",
+  "dataset": {
+    "source_repo": "https://github.com/fstandhartinger/jevbench",
+    "license": "MIT (repo-level license verified via GitHub API 2026-09-22; every vendored record also carries its own provenance.license == \"MIT\" field)",
+    "vendored_files": [
+      "easy.jsonl",
+      "hard.jsonl",
+      "original.jsonl"
+    ],
+    "n_public_items": 231,
+    "n_total_incl_heldout": 534,
+    "note": "231 of JevBench v1.2's 534 total decisions are public (original 72, easy 48, hard 111); the remaining 303 (heldout 24, router 78, judge 68, easy-heldout 24, 109 more hard items) are deliberately unpublished by upstream and cannot be vendored here -- see benchmarks/jevbench/README.md."
+  },
+  "schema_filter": {
+    "checkpoint_labels": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "unsupported_reasons": {
+      "question_type='noul' (decoder-multischema backend only has a 'choice' head)": 74,
+      "question_type='score' (decoder-multischema backend only has a 'choice' head)": 18
+    }
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "max_options": 26,
+    "temperature": 0.878669652732995,
+    "device": "cuda"
+  },
+  "results": {
+    "n_items_considered": 231,
+    "n_supported_by_fixed_schema": 139,
+    "n_unsupported": 92,
+    "n": 139,
+    "accuracy": 0.8345323741007195,
+    "brier": 0.2584475862231779,
+    "ece": 0.08989764246151602,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt -- for the fixed-encoder backends, a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema; for decoder_multischema, any 'choice' item with 2..26 options whose expected answer is among them (see benchmarks/common/schema_filter.filter_supported_multischema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. Read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jevbench-decoder_multischema-20260923T082314Z.raw",
+  "harness_selftest": false
+}

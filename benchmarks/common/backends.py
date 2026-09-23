@@ -176,3 +176,131 @@ class MockBackend:
             "confidence": conf,
             "latency_ms": (time.perf_counter() - t0) * 1000.0,
         }
+
+class DecoderMultischemaBackend:
+    """Runs a LoRA-tuned decoder checkpoint from training/train_decoder_lora_wideschema.py (or
+    its narrower sibling train_decoder_lora_multischema.py) via the restricted-logit-read
+    mechanism, at whatever option count (2..manifest["max_options"]) each item actually has --
+    unlike InProcessBackend, which only ever answers the one fixed 3-way schema baked into
+    benchmarks.common.schema.FIXED_CHECKPOINT_LABELS. Pair this with
+    benchmarks.common.schema_filter.filter_supported_multischema and
+    benchmarks.common.schema.DECODER_MULTISCHEMA_MAX_OPTIONS.
+
+    Prompt construction and the letter-logit read exactly mirror
+    train_decoder_lora_wideschema.py's build_prompt()/evaluate(): same
+    "instructions\n\nstate\n\nOptions:\nA) ...\n...\n\nAnswer with a single letter (...)."
+    layout, same left-padding + last-token restricted-logit softmax. The one deliberate
+    difference from training: options are presented in their given (dataset) order rather than
+    a per-example seeded shuffle -- shuffling exists at training time to stop the model from
+    learning a positional shortcut under gradient descent; at inference there is no gradient to
+    protect from, so a fixed, honest presentation order is simpler and equally valid.
+    """
+
+    name = "decoder_multischema"
+
+    def __init__(self, checkpoint_dir: Path):
+        import torch
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        self._torch = torch
+        manifest_path = checkpoint_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"no manifest at {manifest_path}")
+        self.manifest = json.loads(manifest_path.read_text())
+        self.max_options = self.manifest["max_options"]
+        self.letters = [chr(ord("A") + i) for i in range(self.max_options)]
+        base_model = self.manifest["base_model"]
+        adapter_dir = checkpoint_dir / "adapter"
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.tokenizer = AutoTokenizer.from_pretrained(str(adapter_dir))
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"
+
+        base = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16, device_map=self.device)
+        self.model = PeftModel.from_pretrained(base, str(adapter_dir))
+        self.model.eval()
+
+        letter_ids_full = [self.tokenizer.encode(l, add_special_tokens=False) for l in self.letters]
+        for l, ids in zip(self.letters, letter_ids_full):
+            assert len(ids) == 1, f"letter {l!r} is not a single token under this tokenizer: {ids}"
+        self.letter_ids = torch.tensor([ids[0] for ids in letter_ids_full], device=self.device)
+        self.temperature = float(self.manifest.get("temperature") or 1.0)
+
+        self.labels = None  # variable per item -- no fixed label list, unlike FIXED_CHECKPOINT_LABELS backends
+
+    def describe(self) -> dict:
+        return {
+            "backend": self.name,
+            "base_model": self.manifest["base_model"],
+            "max_options": self.max_options,
+            "temperature": self.temperature,
+            "device": self.device,
+        }
+
+    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
+        torch = self._torch
+        import torch.nn.functional as F
+
+        t0 = time.perf_counter()
+        n = len(options)
+        if not (2 <= n <= self.max_options):
+            raise ValueError(f"DecoderMultischemaBackend got {n} options, outside [2, {self.max_options}]")
+        instructions = instructions or "Choose the option that best answers the question."
+        option_lines = "\n".join(f"{self.letters[i]}) {options[i]}" for i in range(n))
+        prompt_text = (
+            f"{instructions}\n\n{state}\n\nOptions:\n{option_lines}\n\n"
+            f"Answer with a single letter ({'/'.join(self.letters[:n])})."
+        )
+        messages = [{"role": "user", "content": prompt_text}]
+        prompt = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+        )
+        enc = self.tokenizer([prompt], return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            out = self.model(**enc)
+            last_logits = out.logits[0, -1, :]
+            restricted = last_logits[self.letter_ids[:n]]
+            probs = F.softmax(restricted.float() / self.temperature, dim=-1).cpu().numpy()
+
+        probabilities = {options[i]: float(probs[i]) for i in range(n)}
+        choice_idx = int(probs.argmax())
+        return {
+            "choice": options[choice_idx],
+            "probabilities": probabilities,
+            "confidence": float(probs[choice_idx]),
+            "latency_ms": (time.perf_counter() - t0) * 1000.0,
+        }
+
+
+class DecoderMultischemaMockBackend:
+    """Deterministic, non-trained heuristic for the multischema harness wiring self-test --
+    the variable-width sibling of MockBackend above. Always answers with the first option;
+    exists purely to exercise filter_supported_multischema -> backend call -> scoring ->
+    evidence bundle without needing torch/transformers or a real checkpoint. Never used against
+    real vendored datasets outside --selftest (see benchmarks/common/harness.py)."""
+
+    name = "decoder_multischema_mock"
+    labels = None
+
+    def describe(self) -> dict:
+        return {
+            "backend": self.name,
+            "note": "NOT a trained model -- always predicts the first option, used only to prove "
+                     "the multischema harness pipeline works end to end without torch, "
+                     "transformers, or a checkpoint on disk.",
+        }
+
+    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
+        t0 = time.perf_counter()
+        n = len(options)
+        conf = 1.0 / n
+        probabilities = {opt: conf for opt in options}
+        return {
+            "choice": options[0],
+            "probabilities": probabilities,
+            "confidence": conf,
+            "latency_ms": (time.perf_counter() - t0) * 1000.0,
+        }

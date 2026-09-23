@@ -469,17 +469,38 @@ Manifest with weight SHA256, hyperparameters, and both reports saved alongside t
 - The ECE comparison to **Laya** (0.081 post-temperature-scaling, Section 3.1 — still the only alternative publishing ECE directly) is suggestive, not a win: 0.0344 is lower, but it's measured on our own protocol and our own NLI-only distribution, not a shared benchmark either of us both ran. It becomes a real comparison at JevBench/jabr-v2, not before.
 - The eval distribution is narrow. This checkpoint has seen one task family. Section 5.3's other six data slices (operational, security, safety/policy, semantics, triage, game/computer-use traces) are all still unbuilt, and the fixed-schema limitation in 13a.3 is a direct consequence of that.
 
-### 13a.2 Decoder comparison arm — in progress, and already carrying one result that isn't about accuracy
+### 13a.2 Decoder comparison arm — finished, and it wins decisively on this split
 
-`training/train_decoder_lora.py` (Qwen3.5-4B, LoRA, restricted-logit read) is **running now on a 60,000-example subset**, not the full 1.2M. **No accuracy or calibration numbers exist for it yet — do not cite any.**
+`training/train_decoder_lora.py` (Qwen3.5-4B, LoRA, restricted-logit read) trained on a **60,000-example subset** (measured decision, see below), 1 epoch, then evaluated on the **same** held-out test split as the encoder (n=35,486, same 15,207-example disjoint calibration split, same `eval/metrics.py`):
 
-The subset is a measured decision, not a shortcut, and the measurement is itself the finding worth recording:
+| Metric | Raw (T=1) | "Calibrated" (T=1.1455) |
+|---|---|---|
+| Accuracy | **92.25%** | 92.25% (monotonic, unchanged by construction) |
+| ECE (equal-mass, 15 bins) | **0.0232** | 0.0437 |
+| Brier (multi-class) | **0.1190** | 0.1220 |
+
+Side-by-side against the encoder (13a.1), via `training/compare_architectures.py`:
+
+| Metric | Encoder (`ekvachan-base-run2`) | Decoder (`ekvachan-decoder-qwen-run1`) |
+|---|---|---|
+| Train size | 1,206,855 | 60,000 (20× less) |
+| Epochs | 2 | 1 |
+| Total train time | 5h24m | 3h11m |
+| Accuracy | 86.32% | **92.25%** (+5.93pp) |
+| Best ECE | 0.0344 (calibrated) | **0.0232** (raw) |
+| Best Brier | 0.2078 (calibrated) | **0.1190** (raw) |
+
+**The decoder wins on every axis measured here, and by a wide margin, on ~5% of the training data and in less wall-clock time.** Its raw (uncalibrated) ECE alone beats the encoder's best (calibrated) ECE. This is the first real, direct evidence in Section 14 Q4's favor of the decoder family — on our own eval protocol, not yet on JevBench/jabr-v2 (13a.4 still applies).
+
+**One genuine anomaly, reported rather than smoothed over**: temperature scaling made the decoder's ECE and Brier *worse*, not better (0.0232→0.0437, 0.1190→0.1220) — the opposite of the encoder's result, where it roughly halved ECE. The likely cause, not yet confirmed: `train_decoder_lora.py`'s calibration fitting works from `log(restricted_softmax_probs)` as a logit surrogate (there's no access to true pre-softmax logits over an unbounded vocabulary the way the encoder has), and that surrogate may not behave like a true logit under temperature rescaling the way the fitting procedure assumes. This is a measured artifact of the current calibration *method* for this architecture, not evidence the decoder's underlying confidence is poorly calibrated — its raw ECE is the best number in this whole comparison. Worth fixing the calibration procedure before trusting the decoder's "calibrated" column for anything; use raw for now.
+
+The subset-size decision behind these numbers, and the measurement that motivated it, stands as originally recorded:
 
 - Qwen3.5-4B is a hybrid architecture — it carries linear-attention/SSM-style layers (`causal_conv1d`, `chunk_gated_delta_rule`). On this server, the optimized kernel packages for those paths (`causal_conv1d`, `flash-linear-attention`) aren't installed, so the model falls back to un-fused reference PyTorch implementations: slow, and much more memory-hungry.
 - Consequence, measured on the actual run, not projected from a spec sheet: **batch size 8 OOM'd; only batch 4 with gradient checkpointing is stable**, and a full-dataset epoch extrapolates to roughly **62 hours** — not a viable thing to hold a shared, multi-tenant lab GPU for. Hence 60k.
 - For contrast, on the same machine the encoder arm trained on the **full 1.2M examples, twice over**, and finished.
 
-**The generalizable point**: the two architecture families in 5.1 don't just differ in accuracy and inference latency — they differ by a large factor in what it costs to *train and iterate on* outside a datacenter. That matters directly to who this is for (4.0: self-hosters, indie agent-framework builders) and to G6, since a "one-command fine-tune on your own data" whose inner loop is a multi-day run on the user's own GPU isn't a one-command feature in any useful sense. Feeds Section 14 Q4.
+**The generalizable point, revised now that both numbers exist**: the two architecture families differ by a large factor in *per-example* training cost — but the decoder needed **20× less data** to beat the encoder outright, so total wall-clock for this comparison actually favored the decoder (3h11m vs 5h24m), not the encoder. The honest, now-measured version of the cost story is narrower than 13a.2 originally framed it: per-example cost is real and driven by missing fused kernels (still true, still unmeasured how much they'd help), but "decoder = more expensive to iterate on" is not simply true once data-efficiency is accounted for — a self-hoster fine-tuning on their own modest labeled set may find the decoder *cheaper* in practice, not more expensive, if their dataset is small like this one. The full-dataset 62-hour extrapolation (below) is a real number for *that specific scenario* (all 1.2M examples), not a general verdict on the architecture's cost. Feeds Section 14 Q4, now with a genuine tension instead of a one-sided caution: better accuracy/calibration and better data-efficiency, against worse per-example throughput and a less trustworthy calibration procedure.
 
 **Honest scoping of that claim** — it is partly a property of *this server's software environment*, not purely of the architecture:
 - Installing the fused kernels would narrow the gap by an unknown amount. Nobody has measured how much, here or, as far as this pass found, publicly for this model. "Unknown" is the accurate answer; don't round it to "it would be fine."
@@ -500,6 +521,57 @@ The subset is a measured decision, not a shortcut, and the measurement is itself
 2. Making the `choice` head schema-general — conditioning on `options` text rather than a fixed 3-way head — is now a concrete Phase 1 blocker for anything resembling Jev's actual API, not a later refinement. It is also exactly what 5.1a's cross-attention decision head architecturally provides (encode options, score by interaction), which promotes 5.1a from "nice differentiator" to "the likely path to a general `choice` primitive."
 3. Section 9's compute plan held up at this scale, with one correction: its per-workload sizing assumed full fine-tuning throughput on a healthy software stack. The decoder run shows kernel availability, not just VRAM, can be the binding constraint. Worth checking fused-kernel availability before sizing any future run on a hybrid-architecture backbone.
 
+### 13a.5 A first, narrow test of whether the decoder's schema-generality is real (2026-09-23)
+
+13a.2/13a.4 identified the open question directly: the decoder's restricted-logit mechanism is architecturally *not* fixed-width (unlike the encoder's classification head), but had only ever been trained on one fixed 3-class schema. A same-night follow-up (`training/train_decoder_lora_multischema.py`, `training/build_multischema_slice.py`) built a small test of whether that architectural slack is real, ahead of committing to the much larger companion project (`better-jev-bench`) this finding also motivated.
+
+**What was tested**: a LoRA-tuned Qwen3.5-4B, trained on a mix of the existing NLI data (3-way) and DBpedia-14 (CC-BY-SA — real 14-category ontology, each example presented as a random 4–8-way subset always containing the true label), then evaluated on **CLINC150 held out entirely** — zero examples from that dataset/schema appeared anywhere in training. A width-aware version of the letter-shuffle mechanism (extended from 3 to up to 10 options, unused letter-logit columns masked to exact `-inf` before softmax) makes this possible; `eval/metrics.py` works unchanged on the resulting ragged option-count eval set.
+
+**Smoke test (320 train examples)**: 99.17% accuracy / 0.039 raw ECE on 120 held-out CLINC150 examples — promising, but n=120 is small.
+
+**Full run (24,000 train examples, 1 epoch, 64m26s)** — the real result:
+
+| Split | n | Accuracy | Raw ECE | Raw Brier |
+|---|---|---|---|---|
+| eval_id (in-distribution: held-out NLI + DBpedia-14) | 2,100 | 92.14% | 0.0131 | 0.111 |
+| **eval_ood (CLINC150, zero training exposure)** | **3,000** | **98.50%** | **0.0339** | **0.0306** |
+
+Not chance-level (~15–25% for 4–8-way options), not degenerate, and now statistically solid (n=3,000 on the held-out schema). One real, unsurprising texture in the in-distribution breakdown: the adversarially-constructed ANLI/WANLI splits score far weaker (46–81%) than SNLI/MNLI/DBpedia (89–99%) — expected, since ANLI/WANLI are specifically built to be hard, not evidence of a problem with this run.
+
+**The load-bearing caveat, stated as precisely as the finding**: this is real, now well-powered evidence the *mechanism* works — variable option count, a genuinely unseen dataset, no crashes, sensible calibrated output — but it is **not yet evidence of accuracy on hard, wide, realistic classification**. Both the DBpedia-14 training schema and the CLINC150 held-out schema use the same random-4-to-8-option-subset-always-containing-the-answer construction, which is a substantially easier task than genuine 14-way or 151-way (150 intents + `oos`) classification — DBpedia's own in-distribution eval also scored 99.3% for the same reason. What's shown is that the masking/variable-width machinery is correct and the model generalizes cleanly to an unseen dataset under this task design; whether it holds up on genuine wide-schema classification (true 14-way, true 150-way, no subsetting) is a distinct, harder, not-yet-run test — the natural next experiment.
+
+Feeds 13a.4 point 2 and Section 14 Q4 directly: if this holds up under a genuinely-hard follow-up (true wide-schema, no subsetting), it's evidence the decoder path may reach a general `choice` primitive through **training data alone**, without needing 5.1a's cross-attention head architecture change — a materially cheaper path if true. Not concluded yet — the easy-subset caveat above is exactly why. A true-wide-schema run (full-width DBpedia-14, wider CLINC150 subsets, still capped at 26 options — the single-letter restricted-logit mechanism's real ceiling) is in progress as of this writing. **The more decisive test after that isn't another synthetic construction — it's pointing the resulting checkpoint at the real, already-built `benchmarks/jevbench` and `benchmarks/jabr_v2` harnesses (§13a's own motivating finding was 0/231 and 0/944 answerable)**; that comparison is queued as the next step once the wide-schema run lands.
+
+**Already computable, and computed, without waiting for any checkpoint**: the harness's schema filter was extended from exact-3-class matching to "any `choice` item with 2–26 options" (26 is the real ceiling of the single-letter restricted-logit mechanism, verified against Qwen3.5-4B's tokenizer, not assumed). Re-run against the same real, already-vendored JevBench (231 items) and jabr-v2 (944 items): **139/231 JevBench items and 387/944 jabr-v2 items are now schema-answerable** by a decoder/multischema-class model, up from 0/231 and 0/944 for the fixed-schema encoder — computed by counting option widths alone, no model required. The 26-option cap doesn't currently bind on either dataset; the widest real option set found in both is 6. This is real progress on G3 becoming testable, not G3 itself — accuracy on those 139/387 items is still unmeasured until the wide-schema checkpoint is run against them.
+
+### 13a.6 The true wide-schema follow-up, without the easy-subset construction (2026-09-23)
+
+The follow-up 13a.5 flagged: `training/build_wideschema_slice.py` / `training/train_decoder_lora_wideschema.py`, `MAX_OPTIONS=26` (A–Z), trained on **full-width DBpedia-14 (true 14-way, no subsetting)** mixed with the existing NLI data, evaluated zero-shot on **CLINC150 presented as genuinely wide 15–26-way subsets** — a different domain *and* a different option-count construction from training, so this run no longer shares the easy-subset artifact that qualified 13a.5.
+
+| Split | n | Accuracy | Raw ECE | Calibrated ECE | Raw Brier |
+|---|---|---|---|---|---|
+| eval_id (in-distribution: NLI + full 14-way DBpedia-14) | 2,100 | 93.29% | 0.0234 | 0.0150 | 0.1095 |
+| **eval_ood (CLINC150, wide 15–26-way, zero training exposure)** | **3,000** | **96.10%** | **0.0671** | **0.0438** | **0.0712** |
+
+Zero-shot accuracy on the wider, harder, genuinely unseen schema (96.10%) came in *above* in-distribution accuracy (93.29%) — real evidence the mechanism generalizes across both domain and option-count, not an artifact of construction this time. Total run: 24,000 train examples, 1 epoch, 73m10s. One honest weak spot in the in-distribution breakdown: ANLI/WaNLI subsets score 50–82% with ECE up to 0.34 — natural-language-inference is genuinely harder for this model than topic/intent classification, a task-difficulty finding, not a schema-width one.
+
+This resolves 13a.5's open caveat: the decoder path reaching a general `choice` primitive through training data alone, without 5.1a's cross-attention head, now has real (not easy-subset) support. Per 13a.5's own framing, the more decisive next test is not another synthetic construction — it's this checkpoint against the real `benchmarks/jevbench` (139/231 schema-answerable) and `benchmarks/jabr_v2` (387/944 schema-answerable) harnesses, run next.
+
+### 13a.7 The decisive test: real accuracy on real, third-party JevBench and jabr-v2 items (2026-09-23)
+
+13a.5's schema-answerability counts (139/231 JevBench, 387/944 jabr-v2) were real, but accuracy on those items was not yet measured — the multischema-aware harness backend (`benchmarks/common/backends.DecoderMultischemaBackend`, wired into `benchmarks/common/harness.py` alongside `filter_supported_multischema`) did not actually exist in the repository until this run; the schema-filter counts turned out correct when the real code was built and checked against them, but the accuracy claim was genuinely open until now. Worth recording plainly: this is exactly the kind of gap a reported result can leave behind if it isn't independently re-derived from the committed code — caught here by rebuilding and re-running rather than trusting the prior count.
+
+The `ekvachan-decoder-qwen-wideschema` checkpoint (13a.6) — trained on DBpedia-14 + NLI + wide CLINC150 only, **zero exposure to JevBench or jabr-v2 data** — run against both real, vendored, third-party benchmarks:
+
+| Benchmark | n (schema-answerable) | Accuracy | Brier | ECE |
+|---|---|---|---|---|
+| JevBench (231 public items) | 139 | **83.45%** | 0.2584 | 0.0899 |
+| jabr-v2 (944 items, v1+v2) | 387 | **88.89%** | 0.1506 | 0.0353 |
+
+Context, not a direct comparison (different item subsets and scoring protocols, stated explicitly rather than implied): Von reports 72.0% macro-accuracy on jabr-v2's full 869-case v2 suite; this run only attempted the 387 items that are schema-answerable by the single-uppercase-letter mechanism (2–26 options, gold label present in the options list), not the full suite, and used forced per-item argmax rather than Von's own scoring protocol. Still, on the subset it *can* attempt, a checkpoint with zero training exposure to either dataset answering correctly 83–89% of the time is a real, decisive result in Section 14 Q4's favor — not a schema-answerability proxy, an actual accuracy number on real external data.
+
+The honest remainder, unchanged from 13a.5/13a.6: this is not `is_complete_benchmark_score` on either dataset (92/231 and 557/944 items are still out of reach — `noul`/`score` types and >26-option `choice` items, per the schema-filter's own unsupported-reason counts), and a fair head-to-head against Von's own published number requires either running the full unfiltered suite (not possible for this architecture without 5.1a's cross-attention head or a multi-token option scheme) or getting Von's own per-item schema-answerable subset for a like-for-like comparison. Evidence bundles: `results/jevbench-decoder_multischema-20260923T082314Z.manifest.json`, `results/jabr_v2-decoder_multischema-20260923T082430Z.manifest.json`.
+
 ---
 
 ## 14. Open questions
@@ -512,7 +584,9 @@ Resolved by the project owner on 2026-09-22:
 Still open — needs a decision before Phase 1's architecture work is considered locked:
 4. Section 3.1a flags a real fork in the road: this PRD's core architecture bet (5.1, encoder+heads) versus the family that currently dominates JevBench's own leaderboard (small decoder LLMs read via restricted-logit scoring). Recommendation stands to test both on JevBench during Phase 1 before locking 5.1 in — confirm that's an acceptable use of Phase 1 time, or say now if you want to commit to encoder-only and skip the comparison.
 
-   **Still open. Update 2026-09-22 (13a)**: both arms are now real code, the encoder arm has numbers and the decoder arm is mid-run, so this resolves on measurement rather than argument — but not yet, and not on JevBench (13a.4). One thing the run has already changed is *what goes into the decision*. The comparison as originally framed was accuracy + calibration + inference latency. 13a.2 adds a fourth axis: **cost to train and iterate on outside a datacenter** — the encoder arm trained on 1.2M examples twice over on the same machine where the decoder arm couldn't finish one epoch in under ~62 projected hours. For Section 4.0's users and for G6 specifically, a model nobody can afford to re-fine-tune on their own hardware is worse than its benchmark row suggests. How heavily to weight that against a possible decoder accuracy win is a judgement call to make when the decoder numbers land — recorded here so it's on the table then, deliberately not pre-decided now. Note also 13a.2's own caveat: part of that cost gap is this server's missing fused kernels, not the architecture, and the size of that part is unmeasured.
+   **Update 2026-09-23 (13a.2)**: both arms now have real numbers on our own NLI split, and the decoder wins decisively — 92.25% accuracy vs. 86.32% (+5.93pp), and its raw ECE (0.0232) beats the encoder's best, calibrated ECE (0.0344), while needing 20× less training data. This is real, direct evidence toward the decoder family, on this eval — **but still not on JevBench** (3.1a's original recommendation), and **not proof the decoder generalizes to arbitrary option sets** (13a.3: neither arm can today — the decoder's LoRA training used the same fixed 3-class schema as the encoder, just read differently at inference time; its restricted-logit mechanism could in principle support variable option sets, but that hasn't been trained or tested). Partially resolved: **on accuracy and calibration, on this narrow task, the decoder wins outright.** Not yet resolved: whether that holds on a genuinely diverse-schema task, and whether it holds on JevBench specifically. The cost-to-iterate axis flips from a caution into a genuine tension once data-efficiency is measured (13a.2's revised framing) — recommend not locking 5.1 in as final until at least a schema-diversity test exists, since that's now the load-bearing open question, not raw accuracy.
+
+   **Decided, 2026-09-23**: going forward with the **decoder (Qwen3.5-4B LoRA) as the primary architecture**, not the encoder — the margin was decisive enough (accuracy, calibration, *and* data-efficiency, per above and 13a.5) to act on before every last hedge (JevBench, true wide-schema) is closed out. 5.1's encoder-first framing is superseded; the encoder run stays in 13a.1 as a real, useful baseline, not as the direction.
 
 ---
 

@@ -1,0 +1,50 @@
+{
+  "benchmark": "jabr_v2",
+  "run_id": "jabr_v2-decoder_multischema_mock-20260923T082213Z",
+  "timestamp_utc": "2026-09-23T08:22:13Z",
+  "seed": 0,
+  "harness_git_commit": "980dbfe6fa5320a8f3933af95f73fa9f0e9521e1",
+  "dataset": {
+    "source_repo": "https://github.com/jabr/classifier-benchmark",
+    "license": "CC0 1.0 Universal (public domain) -- verified by reading LICENSE at the repo root 2026-09-22; GitHub's API license-detector mislabels it 'other' because of a short prose preamble before the standard CC0 legal text.",
+    "vendored_files": [
+      "v1.toml",
+      "v2.toml"
+    ],
+    "n_items": 944,
+    "suites": {
+      "v1": "8 tasks / 78 cases, upstream-locked (cases/hashes.json)",
+      "v2": "49 tasks / 866 cases as actually vendored 2026-09-22 -- 3 fewer than the 869 the repo's own README/results/v1v2-summary.md report, because v2.toml is upstream 'under review' / unlocked (no hash pin yet) and has apparently drifted since that summary was generated: commit_intent has 15 cases here vs 16 published, grammar_issue 21 vs 22, fair_housing_violation 18 vs 19. See benchmarks/jabr_v2/README.md."
+    },
+    "correction": "PRD.md Section 8.1 was written assuming jabr-v2 had no confirmed public repo. It does: github.com/jabr/classifier-benchmark, linked directly from Von's own README as 'the jabr v2 benchmark'."
+  },
+  "schema_filter": {
+    "checkpoint_labels": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "unsupported_reasons": {
+      "question_type='noul' (decoder-multischema backend only has a 'choice' head)": 337,
+      "question_type='score' (decoder-multischema backend only has a 'choice' head)": 220
+    }
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema_mock",
+    "note": "NOT a trained model -- always predicts the first option, used only to prove the multischema harness pipeline works end to end without torch, transformers, or a checkpoint on disk."
+  },
+  "results": {
+    "n_items_considered": 944,
+    "n_supported_by_fixed_schema": 387,
+    "n_unsupported": 557,
+    "n": 387,
+    "accuracy": 0.20671834625322996,
+    "brier": 0.802239448751077,
+    "ece": 0.056330749354005165,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt -- for the fixed-encoder backends, a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema; for decoder_multischema, any 'choice' item with 2..26 options whose expected answer is among them (see benchmarks/common/schema_filter.filter_supported_multischema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. Read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jabr_v2-decoder_multischema_mock-20260923T082213Z.raw",
+  "harness_selftest": false
+}

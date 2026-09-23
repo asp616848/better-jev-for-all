@@ -26,8 +26,8 @@ from pathlib import Path
 from benchmarks.common import backends
 from benchmarks.common.evidence import write_bundle
 from benchmarks.common.items import Item
-from benchmarks.common.schema import FIXED_CHECKPOINT_LABELS
-from benchmarks.common.schema_filter import filter_supported
+from benchmarks.common.schema import DECODER_MULTISCHEMA_MAX_OPTIONS, FIXED_CHECKPOINT_LABELS
+from benchmarks.common.schema_filter import filter_supported, filter_supported_multischema
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS_DIR = REPO_ROOT / "results"
@@ -41,17 +41,32 @@ def build_backend(args: argparse.Namespace):
         return backends.HTTPBackend(args.http_endpoint)
     if args.backend == "mock":
         return backends.MockBackend()
+    if args.backend == "decoder_multischema":
+        ckpt = Path(args.checkpoint_dir) if args.checkpoint_dir else (
+            REPO_ROOT / "checkpoints" / "ekvachan-decoder-qwen-wideschema"
+        )
+        return backends.DecoderMultischemaBackend(ckpt)
+    if args.backend == "decoder_multischema_mock":
+        return backends.DecoderMultischemaMockBackend()
     raise ValueError(f"unknown backend {args.backend!r}")
 
 
 def make_arg_parser(prog: str) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=prog)
     p.add_argument(
-        "--backend", choices=["in_process", "http", "mock"], default="in_process",
-        help="in_process imports serve.inference.EncoderChoiceModel directly (needs torch/"
-             "transformers and a real checkpoint on disk); http calls a running serve/server.py "
-             "over the wire (needs no local ML stack, but a server must already be up); mock is "
-             "a non-trained wiring self-test, only meaningful together with --selftest.",
+        "--backend",
+        choices=["in_process", "http", "mock", "decoder_multischema", "decoder_multischema_mock"],
+        default="in_process",
+        help=(
+            "in_process imports serve.inference.EncoderChoiceModel directly (needs torch/"
+            "transformers and a real checkpoint on disk); http calls a running serve/server.py "
+            "over the wire (needs no local ML stack, but a server must already be up); mock is "
+            "a non-trained wiring self-test, only meaningful together with --selftest. "
+            "decoder_multischema runs a variable-option-count decoder/LoRA checkpoint (see "
+            "benchmarks/common/backends.py DecoderMultischemaBackend) against any 2-26 option "
+            "choice item, not just the fixed 3-way encoder schema; decoder_multischema_mock is "
+            "its non-trained wiring self-test."
+        ),
     )
     p.add_argument("--http-endpoint", default="http://127.0.0.1:8000")
     p.add_argument("--checkpoint-dir", default=None, help="override serve.inference's default checkpoint path")
@@ -71,23 +86,40 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
 
 
 def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], dataset_provenance: dict) -> dict:
-    filt = filter_supported(items, FIXED_CHECKPOINT_LABELS)
-    label_to_idx = {l: i for i, l in enumerate(FIXED_CHECKPOINT_LABELS)}
+    multischema = args.backend in ("decoder_multischema", "decoder_multischema_mock")
+
+    if multischema:
+        filt = filter_supported_multischema(items, DECODER_MULTISCHEMA_MAX_OPTIONS)
+    else:
+        filt = filter_supported(items, FIXED_CHECKPOINT_LABELS)
+        label_to_idx = {l: i for i, l in enumerate(FIXED_CHECKPOINT_LABELS)}
 
     raw_rows: list[dict] = []
     probs_rows: list[list[float]] = []
     label_idx_rows: list[int] = []
+    n_classes = len(FIXED_CHECKPOINT_LABELS)
 
     if filt.supported:
         backend = build_backend(args)
-        if list(backend.labels) != FIXED_CHECKPOINT_LABELS:
+        if not multischema and list(backend.labels) != FIXED_CHECKPOINT_LABELS:
             raise RuntimeError(
                 f"{args.backend} backend reports labels={backend.labels!r}, which disagrees with "
                 f"benchmarks.common.schema.FIXED_CHECKPOINT_LABELS={FIXED_CHECKPOINT_LABELS!r} used "
                 "to filter this run -- refusing to score against a schema mismatch."
             )
+        if multischema:
+            # Each item has its own option count (2..DECODER_MULTISCHEMA_MAX_OPTIONS); pad every
+            # row's probability vector to the widest option count actually seen in this run so
+            # eval/metrics.py's full_report can score them together. Padded columns are exact
+            # 0.0 (never the argmax, contribute correctly to Brier/ECE) -- same proof sketch
+            # training/train_decoder_lora_wideschema.py's own docstring gives for its 26-column
+            # padding, applied here to a run-specific (usually much narrower) width instead.
+            n_classes = max(len(item.options) for item in filt.supported)
         for item in filt.supported:
-            out = backend.predict_choice(item.state, item.options)
+            if multischema:
+                out = backend.predict_choice(item.state, item.options, instructions=item.instructions)
+            else:
+                out = backend.predict_choice(item.state, item.options)
             correct = out["choice"] == item.expected
             raw_rows.append({
                 "item_id": item.item_id,
@@ -102,15 +134,22 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
                 "correct": correct,
                 "latency_ms": out.get("latency_ms"),
             })
-            probs_rows.append([out["probabilities"][l] for l in FIXED_CHECKPOINT_LABELS])
-            label_idx_rows.append(label_to_idx[item.expected])
+            if multischema:
+                padded = [0.0] * n_classes
+                for i, opt in enumerate(item.options):
+                    padded[i] = out["probabilities"].get(opt, 0.0)
+                probs_rows.append(padded)
+                label_idx_rows.append(item.options.index(item.expected))
+            else:
+                probs_rows.append([out["probabilities"][l] for l in FIXED_CHECKPOINT_LABELS])
+                label_idx_rows.append(label_to_idx[item.expected])
         model_info = {"instantiated": True, **backend.describe()}
         backend_name = backend.name
     else:
         model_info = {
             "instantiated": False,
             "backend_requested": args.backend,
-            "reason": "0 items in this run matched the checkpoint's fixed schema -- no model "
+            "reason": "0 items in this run matched the checkpoint's schema -- no model "
                       "needed to be loaded to know that (see benchmarks/common/schema.py).",
         }
         backend_name = args.backend
@@ -118,7 +157,7 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
     if probs_rows:
         import numpy as np
         from eval.metrics import full_report
-        report = full_report(np.array(probs_rows), np.array(label_idx_rows), len(FIXED_CHECKPOINT_LABELS))
+        report = full_report(np.array(probs_rows), np.array(label_idx_rows), n_classes)
     else:
         report = {"n": 0, "accuracy": None, "brier": None, "ece": None}
 
@@ -132,10 +171,12 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
         ),
         "note": (
             "n_supported_by_fixed_schema is how many items this checkpoint could legitimately "
-            "attempt (a 'choice' item whose options are exactly the checkpoint's fixed 3-way "
-            "schema). is_complete_benchmark_score is true only when every real (non-selftest) "
-            "item was both supported and attempted -- as of this checkpoint that has never "
-            "happened (PRD.md Section 10a); read benchmarks/README.md and the per-benchmark "
+            "attempt -- for the fixed-encoder backends, a 'choice' item whose options are "
+            "exactly the checkpoint's fixed 3-way schema; for decoder_multischema, any 'choice' "
+            "item with 2..26 options whose expected answer is among them (see "
+            "benchmarks/common/schema_filter.filter_supported_multischema). "
+            "is_complete_benchmark_score is true only when every real (non-selftest) item was "
+            "both supported and attempted. Read benchmarks/README.md and the per-benchmark "
             "README before treating this file as a benchmark ranking."
         ),
     }

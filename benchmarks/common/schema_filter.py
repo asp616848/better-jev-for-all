@@ -49,3 +49,41 @@ def filter_supported(items: list[Item], model_labels: list[str]) -> SchemaFilter
             unsupported.append(item)
 
     return SchemaFilterResult(supported=supported, unsupported=unsupported, unsupported_reasons=reasons)
+
+def filter_supported_multischema(items: list[Item], max_options: int) -> SchemaFilterResult:
+    """The decoder/multischema sibling of filter_supported() above. A `choice` item is
+    supported here if it has between 2 and max_options options (inclusive) and its gold
+    `expected` answer is actually present in that options list -- unlike filter_supported(),
+    there is no fixed label list to match exactly, since the decoder backend reads whichever
+    option set the item itself provides. Nothing here drops an item silently: every item ends
+    up in exactly one of supported/unsupported, with a reason recorded for the latter.
+    """
+    supported: list[Item] = []
+    unsupported: list[Item] = []
+    reasons: Counter = Counter()
+
+    for item in items:
+        if item.question_type != "choice":
+            reasons[f"question_type={item.question_type!r} (decoder-multischema backend only has a 'choice' head)"] += 1
+            unsupported.append(item)
+            continue
+        if not item.options:
+            reasons["'choice' item has no options/labels recorded"] += 1
+            unsupported.append(item)
+            continue
+        n = len(item.options)
+        if n < 2:
+            reasons[f"'choice' item has only {n} option(s), need >= 2"] += 1
+            unsupported.append(item)
+            continue
+        if n > max_options:
+            reasons[f"'choice' item has {n} options, exceeds max_options={max_options}"] += 1
+            unsupported.append(item)
+            continue
+        if item.expected not in item.options:
+            reasons["item.expected is not present in item.options -- cannot score against it"] += 1
+            unsupported.append(item)
+            continue
+        supported.append(item)
+
+    return SchemaFilterResult(supported=supported, unsupported=unsupported, unsupported_reasons=reasons)

@@ -20,3 +20,13 @@ going stale.
 """
 
 FIXED_CHECKPOINT_LABELS = ["entailment", "neutral", "contradiction"]
+
+# The variable-width sibling of FIXED_CHECKPOINT_LABELS above: the decoder/restricted-logit
+# checkpoints (training/train_decoder_lora_multischema.py, train_decoder_lora_wideschema.py)
+# are not tied to one fixed option list -- they read whichever single-uppercase-letter token
+# (A-Z) corresponds to the item's own option count, up to this cap. 26 is the real ceiling of
+# a single-uppercase-letter restricted-logit scheme (one token per letter), independently
+# verified against Qwen3.5-4B's tokenizer by train_decoder_lora_wideschema.py's own runtime
+# assertion (every letter A-Z is confirmed a single, mutually distinct token before that script
+# trains), not assumed here.
+DECODER_MULTISCHEMA_MAX_OPTIONS = 26
