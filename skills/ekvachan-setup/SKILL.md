@@ -17,7 +17,7 @@ Full design rationale, architecture decisions, and benchmark commitments live in
 - User wants to swap a Jev-integrated project (e.g. a `browser-use/jev-ultrafast`-style agent) over to a self-hosted model — subject to the one-schema limitation below.
 - User wants to understand what's real vs. still aspirational in this repo (this skill's guardrails apply here specifically).
 
-Things this skill **cannot** do yet, because the code doesn't exist: run a benchmark suite, produce an evidence bundle, fine-tune via a one-command flow, or serve `score`/`noul` questions or an arbitrary `choice` option set. Say so rather than improvising a substitute.
+Things this skill **cannot** do yet, because the code doesn't exist: fine-tune via a one-command flow, or serve `score`/`noul` questions or an arbitrary `choice` option set through `serve/` (the serving layer is still encoder-only — see the status note above). Benchmark suites and evidence bundles *do* now exist and are runnable: `benchmarks/jevbench/` and `benchmarks/jabr_v2/` are real vendored third-party harnesses, and every run writes a manifest to `results/`. Say plainly which of these applies rather than improvising a substitute.
 
 ## 1. Install
 ```bash
