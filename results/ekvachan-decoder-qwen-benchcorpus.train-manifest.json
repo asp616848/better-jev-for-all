@@ -1,0 +1,200 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit-benchcorpus",
+  "max_options": 26,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "train_size": 62000,
+  "calib_size": 1425,
+  "eval_id_test_size": 3325,
+  "eval_ood_size": 3000,
+  "temperature": 1.0059764460390523,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 3325,
+    "accuracy": 0.8493233082706767,
+    "brier": 0.19761618971824646,
+    "ece": 0.011197979423336522
+  },
+  "eval_id_calibrated_report": {
+    "n": 3325,
+    "accuracy": 0.8493233082706767,
+    "brier": 0.19758567214012146,
+    "ece": 0.010898519256957498
+  },
+  "eval_id_raw_by_source": {
+    "anli_r1_dev": {
+      "n": 8,
+      "accuracy": 0.875,
+      "brier": 0.18170695006847382,
+      "ece": 0.20769436657428741
+    },
+    "anli_r1_test": {
+      "n": 7,
+      "accuracy": 0.7142857142857143,
+      "brier": 0.40221017599105835,
+      "ece": 0.31402711357389174
+    },
+    "anli_r2_dev": {
+      "n": 7,
+      "accuracy": 0.5714285714285714,
+      "brier": 0.577706515789032,
+      "ece": 0.4768932717187064
+    },
+    "anli_r2_test": {
+      "n": 5,
+      "accuracy": 0.4,
+      "brier": 0.736815869808197,
+      "ece": 0.527614963054657
+    },
+    "anli_r3_dev": {
+      "n": 7,
+      "accuracy": 0.8571428571428571,
+      "brier": 0.4283657968044281,
+      "ece": 0.40778830221721096
+    },
+    "anli_r3_test": {
+      "n": 9,
+      "accuracy": 0.3333333333333333,
+      "brier": 0.8582866191864014,
+      "ece": 0.5608754853407542
+    },
+    "bjb:banking77/intent": {
+      "n": 288,
+      "accuracy": 0.9583333333333334,
+      "brier": 0.07978096604347229,
+      "ece": 0.03588358623286088
+    },
+    "bjb:cfpb_complaints/product": {
+      "n": 266,
+      "accuracy": 0.5902255639097744,
+      "brier": 0.47307562828063965,
+      "ece": 0.05096272485596792
+    },
+    "bjb:civil_comments/is_toxic": {
+      "n": 274,
+      "accuracy": 0.9379562043795621,
+      "brier": 0.08070710301399231,
+      "ece": 0.01871246295253726
+    },
+    "bjb:civil_comments/toxicity_level": {
+      "n": 273,
+      "accuracy": 0.8095238095238095,
+      "brier": 0.2796623706817627,
+      "ece": 0.04500892419954797
+    },
+    "bjb:cuad/clause_present": {
+      "n": 279,
+      "accuracy": 0.9713261648745519,
+      "brier": 0.05380301550030708,
+      "ece": 0.03037307873421672
+    },
+    "bjb:cuad/clause_type": {
+      "n": 277,
+      "accuracy": 0.8736462093862816,
+      "brier": 0.17094796895980835,
+      "ece": 0.032282770971098544
+    },
+    "bjb:go_emotions/emotion": {
+      "n": 273,
+      "accuracy": 0.5787545787545788,
+      "brier": 0.5301949381828308,
+      "ece": 0.10301908490422007
+    },
+    "bjb:ledgar/provision_type": {
+      "n": 275,
+      "accuracy": 0.7636363636363637,
+      "brier": 0.2716186046600342,
+      "ece": 0.058225670890374615
+    },
+    "bjb:massive/intent": {
+      "n": 278,
+      "accuracy": 0.920863309352518,
+      "brier": 0.11560466140508652,
+      "ece": 0.024502869990232184
+    },
+    "bjb:massive/scenario": {
+      "n": 299,
+      "accuracy": 0.9297658862876255,
+      "brier": 0.10423348844051361,
+      "ece": 0.01607676662728939
+    },
+    "dbpedia_14_fullwidth_test": {
+      "n": 269,
+      "accuracy": 0.9962825278810409,
+      "brier": 0.006797059439122677,
+      "ece": 0.0018493114350896776
+    },
+    "mnli_validation_matched": {
+      "n": 55,
+      "accuracy": 0.9454545454545454,
+      "brier": 0.1080448180437088,
+      "ece": 0.12153091593222184
+    },
+    "mnli_validation_mismatched": {
+      "n": 50,
+      "accuracy": 0.86,
+      "brier": 0.1801365613937378,
+      "ece": 0.16267752647399902
+    },
+    "snli_test": {
+      "n": 40,
+      "accuracy": 0.925,
+      "brier": 0.10890774428844452,
+      "ece": 0.07349798381328583
+    },
+    "snli_validation": {
+      "n": 53,
+      "accuracy": 0.9056603773584906,
+      "brier": 0.12954583764076233,
+      "ece": 0.06670945432950864
+    },
+    "wanli_test": {
+      "n": 33,
+      "accuracy": 0.696969696969697,
+      "brier": 0.4233689606189728,
+      "ece": 0.22936090194817743
+    }
+  },
+  "eval_id_raw_by_question_type": {
+    "choice": {
+      "n": 2499,
+      "accuracy": 0.8303321328531412,
+      "brier": 0.21752750873565674,
+      "ece": 0.015703245120890004
+    },
+    "noul": {
+      "n": 553,
+      "accuracy": 0.9547920433996383,
+      "brier": 0.06713342666625977,
+      "ece": 0.016592933515096886
+    },
+    "score": {
+      "n": 273,
+      "accuracy": 0.8095238095238095,
+      "brier": 0.2796623706817627,
+      "ece": 0.04500892419954797
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.9676666666666667,
+    "brier": 0.05685098096728325,
+    "ece": 0.03203255621592204
+  },
+  "eval_ood_raw_by_source": {
+    "clinc150_oos_small_wide": {
+      "n": 3000,
+      "accuracy": 0.9676666666666667,
+      "brier": 0.05685098096728325,
+      "ece": 0.03203255621592204
+    }
+  },
+  "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval, reused unchanged from 13a.6 as a regression check -- does mixing in noul/score hurt choice generalization?",
+  "primitives_note": "First run mixing noul (BoolQ) and score (Sp1786 sentiment, 3-level) primitives into training. eval_id_raw_by_question_type is the load-bearing new number -- accuracy/ECE/Brier per primitive type, still measured via the existing choice-style argmax metric as a proxy (see build_primitives_slice.py docstring for what this does and does not establish).",
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-23T19:57:16Z",
+  "total_train_seconds": 16786.746652841568
+}

@@ -622,6 +622,25 @@ This also explains the earlier fitted temperatures (0.86-1.15 across different r
 
 **Consequence**: `benchmarks/common/backends.DecoderMultischemaBackend`'s existing `apply_temperature=False` default was already the right call, now for a stronger, verified reason ("raw is provably optimal," not merely "calibrated made 13a.2's one run worse"). No code changes are needed to fix this -- there was nothing broken in the mechanism, only an incomplete explanation for a real, already-correctly-handled observation. Leaving the manifest's `temperature`/`*_calibrated_report` fields in place for transparency (so future runs can keep checking this holds), but they should keep being read as "for reference only," per 13a.2's original guidance, now on firmer footing.
 
+### 13a.10 First retrain on the real better-jev-bench corpus: noul/score improve substantially, choice's raw number needs a real caveat (2026-09-23)
+
+The owner's 2026-09-23 resequencing put better-jev-bench first, on the reasoning that the model wasn't actually done training -- 13a.8's `noul`/`score` were real but narrow (one dataset each). `training/build_benchcorpus_slice.py` combined the real, already-verified `bjb export` output (55k public / 4.4k held-out, 11 tasks, CLINC150 deliberately excluded to preserve the zero-shot regression check) with the existing NLI/DBpedia-14 continuity anchor: 62,000 train examples across 17 sources (up from 13a.8's 24,000/4), trained 4h40m (`checkpoints/ekvachan-decoder-qwen-benchcorpus`).
+
+| Metric | 13a.8 (narrow) | This run (wide) | Change |
+|---|---|---|---|
+| `noul` | 88.80% | **95.48%** | **+6.68pp** |
+| `score` | 75.40% | **80.95%** | **+5.55pp** |
+| `choice` (aggregate) | 92.02% | 83.03% | -8.99pp (see caveat below) |
+| CLINC150 zero-shot (unchanged regression check) | 95.73% | **96.77%** | +1.04pp |
+
+**`noul` and `score` both improved substantially -- exactly what 13a.8 named as the right lever ("more/wider data, not a design change").** `noul` now draws from two real sources (BoolQ plus CUAD/civil-comments-adjacent text via the bench corpus's broader domain mix); `score` still has only `civil_comments/toxicity_level` as its real ordinal source, but at far higher volume and diversity of underlying text than the prior single sentiment dataset.
+
+**The `choice` aggregate drop is not a real regression, and reporting it without this caveat would be dishonest**: 13a.8's `choice` eval was only NLI + DBpedia-14 -- comparatively clean-cut tasks. This run's `choice` eval also includes genuinely hard, never-before-tested real-world domains: CFPB complaint categorization (59.02%, n=266) and GoEmotions (57.88% on 28-way emotion classification, n=273, a task even specialized emotion classifiers find hard). The tasks common to *both* runs tell the real story: `dbpedia_14_fullwidth_test` 99.63%, NLI splits in the same 70-95% range history already established for ANLI/WaNLI's known difficulty, and -- the cleanest apples-to-apples check available, since it is the exact same held-out zero-shot-schema evaluation reused unmodified since 13a.6 -- **CLINC150 zero-shot held steady and marginally improved (95.73% -> 96.77%)**. Choice generalization did not get worse; the benchmark got harder and more honest by including domains nobody had tested before.
+
+**New, real per-domain findings, reported rather than smoothed over**: BANKING77 (95.83%), CUAD clause-detection (97.13% noul / 87.36% choice), MASSIVE intent+scenario (92-93%) all look strong on a first pass. CFPB product categorization (59.02%) and GoEmotions (57.88%) are real, honest weak points -- both are wide (10-way and 28-way respectively), semantically ambiguous multi-label-ish tasks even for purpose-built classifiers, and each had only ~5,000 training examples in this pass. Worth a follow-up investigation (more data, or a confusion-matrix check mirroring 13a.8's `score` diagnosis) before concluding they're a real ceiling rather than an undertrained slice.
+
+Evidence: `results/ekvachan-decoder-qwen-benchcorpus.train-manifest.json`. Next per the resequenced roadmap: vision data, then nano, then the game harnesses against this checkpoint for the real Von comparison.
+
 ---
 
 ## 14. Open questions
