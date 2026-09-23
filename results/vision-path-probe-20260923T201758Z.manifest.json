@@ -1,0 +1,328 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "timestamp_utc": "2026-09-23T20:17:15Z",
+  "versions": {
+    "transformers": "5.17.0",
+    "torch": "2.14.0+cu130",
+    "torchvision": "0.29.0+cu130"
+  },
+  "config": {
+    "class": "Qwen3_5Config",
+    "architectures": [
+      "Qwen3_5ForConditionalGeneration"
+    ],
+    "has_vision_config": true,
+    "image_token_id": 248056,
+    "video_token_id": 248057,
+    "vision_start_token_id": 248053,
+    "vision_end_token_id": 248054
+  },
+  "auto_class_mapping": {
+    "model_type": "qwen3_5",
+    "AutoModelForCausalLM": "Qwen3_5ForCausalLM",
+    "AutoModelForImageTextToText": "Qwen3_5ForConditionalGeneration"
+  },
+  "params": {
+    "vl_class": "Qwen3_5ForConditionalGeneration",
+    "vl_total": 5174964736,
+    "vl_visual": 333514240,
+    "visual_fraction": 0.0644,
+    "causal_lm_class": "Qwen3_5ForCausalLM",
+    "causal_lm_total": 4841450496,
+    "causal_lm_has_visual": false
+  },
+  "lora": {
+    "target_modules": [
+      "down_proj",
+      "gate_proj",
+      "k_proj",
+      "o_proj",
+      "q_proj",
+      "up_proj",
+      "v_proj"
+    ],
+    "n_lora_modules": 128,
+    "any_in_vision_tower": false,
+    "example_key": "base_model.model.model.language_model.layers.0.mlp.gate_proj.lora_A",
+    "trainable_params": 21233664,
+    "note": "The vision tower is frozen by name mismatch, not by an explicit freeze: its blocks use attn.qkv / mlp.linear_fc{1,2}, none of which match this project's target_modules. Adapter keys gain a `.language_model` path segment under the VL class, so a CausalLM-trained adapter does NOT load into the VL model without a key remap."
+  },
+  "chat_template": {
+    "tokenizer_class": "Qwen2Tokenizer",
+    "accepts_image_content_block": true,
+    "image_pad_occurrences_in_rendered_string": 1,
+    "rendered_head": "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>You are a computer-use agent. Given the screenshot of the current screen state, choose which of the ",
+    "rendered_tail": "|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  "processor": {
+    "class": "Qwen3VLProcessor",
+    "image_processor_class": "Qwen2VLImageProcessor",
+    "patch_size": 16,
+    "merge_size": 2,
+    "default_size": {
+      "longest_edge": 16777216,
+      "shortest_edge": 65536
+    }
+  },
+  "image_token_cost": {
+    "uncapped": {
+      "atari_native": {
+        "w": 160,
+        "h": 210,
+        "grid_thw": [
+          1,
+          20,
+          14
+        ],
+        "image_tokens": 70,
+        "pixel_values_shape": [
+          280,
+          1536
+        ]
+      },
+      "vizdoom_scale": {
+        "w": 320,
+        "h": 240,
+        "grid_thw": [
+          1,
+          16,
+          20
+        ],
+        "image_tokens": 80,
+        "pixel_values_shape": [
+          320,
+          1536
+        ]
+      },
+      "square_448": {
+        "w": 448,
+        "h": 448,
+        "grid_thw": [
+          1,
+          28,
+          28
+        ],
+        "image_tokens": 196,
+        "pixel_values_shape": [
+          784,
+          1536
+        ]
+      },
+      "vga_game_frame": {
+        "w": 640,
+        "h": 480,
+        "grid_thw": [
+          1,
+          30,
+          40
+        ],
+        "image_tokens": 300,
+        "pixel_values_shape": [
+          1200,
+          1536
+        ]
+      },
+      "doc_page": {
+        "w": 768,
+        "h": 768,
+        "grid_thw": [
+          1,
+          48,
+          48
+        ],
+        "image_tokens": 576,
+        "pixel_values_shape": [
+          2304,
+          1536
+        ]
+      },
+      "screenshot_720p": {
+        "w": 1280,
+        "h": 720,
+        "grid_thw": [
+          1,
+          44,
+          80
+        ],
+        "image_tokens": 880,
+        "pixel_values_shape": [
+          3520,
+          1536
+        ]
+      },
+      "screenshot_1080p": {
+        "w": 1920,
+        "h": 1080,
+        "grid_thw": [
+          1,
+          68,
+          120
+        ],
+        "image_tokens": 2040,
+        "pixel_values_shape": [
+          8160,
+          1536
+        ]
+      }
+    },
+    "capped_1080p": {
+      "max_pixels=256*28*28": {
+        "grid_thw": [
+          1,
+          20,
+          36
+        ],
+        "image_tokens_1080p": 180
+      },
+      "max_pixels=128*28*28": {
+        "grid_thw": [
+          1,
+          14,
+          26
+        ],
+        "image_tokens_1080p": 91
+      },
+      "max_pixels=64*28*28": {
+        "grid_thw": [
+          1,
+          10,
+          18
+        ],
+        "image_tokens_1080p": 45
+      }
+    }
+  },
+  "batching": {
+    "image_row_keys": [
+      "attention_mask",
+      "image_grid_thw",
+      "input_ids",
+      "mm_token_type_ids",
+      "pixel_values"
+    ],
+    "text_only_row_keys": [
+      "attention_mask",
+      "input_ids",
+      "mm_token_type_ids"
+    ],
+    "text_only_emits_pixel_values": false,
+    "image_pad_expanded_by_processor": 196,
+    "mixed_batch_works": true,
+    "mixed_batch_shapes": {
+      "input_ids": [
+        2,
+        280
+      ],
+      "attention_mask": [
+        2,
+        280
+      ],
+      "mm_token_type_ids": [
+        2,
+        280
+      ],
+      "pixel_values": [
+        784,
+        1536
+      ],
+      "image_grid_thw": [
+        1,
+        3
+      ]
+    },
+    "two_image_batch_shapes": {
+      "input_ids": [
+        2,
+        280
+      ],
+      "attention_mask": [
+        2,
+        280
+      ],
+      "mm_token_type_ids": [
+        2,
+        280
+      ],
+      "pixel_values": [
+        1064,
+        1536
+      ],
+      "image_grid_thw": [
+        2,
+        3
+      ]
+    },
+    "mixed_last_column_ids": [
+      271,
+      271
+    ],
+    "mixed_last_column_identical": true,
+    "mixed_last_column_attention": [
+      1,
+      1
+    ],
+    "note": "Left padding keeps the final template token in the last column for every row, image or not, so `labels[:, last_col]` masking and the `logits[:, -1, :]` restricted-logit read in train_decoder_lora_benchcorpus.py work unchanged."
+  },
+  "gpu_forward": {
+    "device_name": "NVIDIA L40S",
+    "load_seconds": 6.8,
+    "weights_vram_gb": 9.51,
+    "peak_vram_gb": 9.6,
+    "runs": {
+      "image_row": {
+        "ok": true,
+        "logits_shape": [
+          1,
+          280,
+          248320
+        ],
+        "forward_ms": 1832.6,
+        "restricted_probs_ABC": [
+          [
+            0.8094000220298767,
+            0.06639999896287918,
+            0.12409999966621399
+          ]
+        ]
+      },
+      "text_only_row": {
+        "ok": true,
+        "logits_shape": [
+          1,
+          68,
+          248320
+        ],
+        "forward_ms": 84.8,
+        "restricted_probs_ABC": [
+          [
+            0.8629000186920166,
+            0.11680000275373459,
+            0.0203000009059906
+          ]
+        ]
+      },
+      "mixed_batch": {
+        "ok": true,
+        "logits_shape": [
+          2,
+          280,
+          248320
+        ],
+        "forward_ms": 177.5,
+        "restricted_probs_ABC": [
+          [
+            0.8338000178337097,
+            0.053300000727176666,
+            0.1128000020980835
+          ],
+          [
+            0.8769999742507935,
+            0.1046999990940094,
+            0.018200000748038292
+          ]
+        ]
+      }
+    },
+    "note": "Untrained base model -- the probabilities prove the mechanism runs, nothing about accuracy."
+  }
+}

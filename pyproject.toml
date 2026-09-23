@@ -9,6 +9,10 @@ dependencies = [
     "datasets>=3.0",
     "accelerate>=1.0",
     "peft>=0.13",
+    # Vision tier (PRD 5.2b): transformers 5.x makes torchvision a hard dependency of any
+    # image processor -- AutoImageProcessor/AutoProcessor raise ImportError without it.
+    "pillow>=10.0",
+    "torchvision>=0.19",
     "scikit-learn>=1.5",
     "numpy>=1.26",
     "huggingface-hub>=0.25",
