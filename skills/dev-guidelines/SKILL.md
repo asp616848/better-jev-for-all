@@ -65,3 +65,7 @@ Instruct them explicitly to verify against real current state (`git log`, actual
 ## 10. Evidence discipline (PRD §8.2, both repos).
 
 Every benchmark/eval run gets a `manifest.json` committed to `results/`, referenced by its real filename/timestamp in the PRD narrative — not just a summarized number in prose. If you can't point to the file, don't write the number into the PRD yet.
+
+## 11. Sync discipline: server and GitHub must never silently diverge
+
+Before ending work on either repo, confirm `git status` is clean and both `git log origin/main..HEAD` and `git log HEAD..origin/main` are empty (`git fetch` first) — the server clone and GitHub must agree exactly, in both directions. Never leave a commit sitting unpushed (as happened mid-session on this repo while gh auth was broken — fixed, then verified clean). Never assume local git history reflects the remote without fetching first — this is what caused the redundant-rebuild incident in rule 3/7. A local Mac path (e.g. under `Documents/GitHub/`) is not part of this sync loop at all: it is not a git remote, should not be treated as one, and any content found there should be assumed stale until independently verified against the server/GitHub state.
