@@ -1,0 +1,125 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit-wideschema",
+  "max_options": 26,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "train_size": 24000,
+  "calib_size": 900,
+  "eval_id_test_size": 2100,
+  "eval_ood_size": 3000,
+  "temperature": 0.878669652732995,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 2100,
+    "accuracy": 0.9328571428571428,
+    "brier": 0.10954336822032928,
+    "ece": 0.023412540526617148
+  },
+  "eval_id_calibrated_report": {
+    "n": 2100,
+    "accuracy": 0.9328571428571428,
+    "brier": 0.10839470475912094,
+    "ece": 0.01497812850134714
+  },
+  "eval_id_raw_by_source": {
+    "anli_r1_dev": {
+      "n": 27,
+      "accuracy": 0.8148148148148148,
+      "brier": 0.24178968369960785,
+      "ece": 0.21420777285540543
+    },
+    "anli_r1_test": {
+      "n": 27,
+      "accuracy": 0.7777777777777778,
+      "brier": 0.28535762429237366,
+      "ece": 0.27510420370984956
+    },
+    "anli_r2_dev": {
+      "n": 28,
+      "accuracy": 0.75,
+      "brier": 0.3907032907009125,
+      "ece": 0.30976741122347967
+    },
+    "anli_r2_test": {
+      "n": 17,
+      "accuracy": 0.8235294117647058,
+      "brier": 0.3709428310394287,
+      "ece": 0.29045288352405324
+    },
+    "anli_r3_dev": {
+      "n": 24,
+      "accuracy": 0.7916666666666666,
+      "brier": 0.43838202953338623,
+      "ece": 0.3187264613807201
+    },
+    "anli_r3_test": {
+      "n": 20,
+      "accuracy": 0.5,
+      "brier": 0.6009374856948853,
+      "ece": 0.3419516742229462
+    },
+    "dbpedia_14_fullwidth_test": {
+      "n": 1036,
+      "accuracy": 0.9864864864864865,
+      "brier": 0.02072228118777275,
+      "ece": 0.0030999219900852853
+    },
+    "mnli_validation_matched": {
+      "n": 197,
+      "accuracy": 0.8934010152284264,
+      "brier": 0.17102840542793274,
+      "ece": 0.06755540894372818
+    },
+    "mnli_validation_mismatched": {
+      "n": 203,
+      "accuracy": 0.916256157635468,
+      "brier": 0.17279966175556183,
+      "ece": 0.08311093264612658
+    },
+    "snli_test": {
+      "n": 222,
+      "accuracy": 0.9279279279279279,
+      "brier": 0.125030055642128,
+      "ece": 0.04959068964193535
+    },
+    "snli_validation": {
+      "n": 198,
+      "accuracy": 0.9545454545454546,
+      "brier": 0.09266172349452972,
+      "ece": 0.06102300984690889
+    },
+    "wanli_test": {
+      "n": 101,
+      "accuracy": 0.7227722772277227,
+      "brier": 0.3928668200969696,
+      "ece": 0.12521621732428523
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.961,
+    "brier": 0.07122039794921875,
+    "ece": 0.06711705780029295
+  },
+  "eval_ood_calibrated_report": {
+    "n": 3000,
+    "accuracy": 0.961,
+    "brier": 0.06541276723146439,
+    "ece": 0.04379648288091024
+  },
+  "eval_ood_raw_by_source": {
+    "clinc150_oos_small_wide": {
+      "n": 3000,
+      "accuracy": 0.961,
+      "brier": 0.07122039794921875,
+      "ece": 0.06711705780029295
+    }
+  },
+  "eval_ood_note": "zero training examples from this schema/source were seen during training -- this is the generalization test. Options are wide (15-26 way) CLINC150 subsets, NOT the full 151-way task -- 151 > 26-letter budget, structurally out of reach for this mechanism (see module docstring).",
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-23T07:27:58Z",
+  "total_train_seconds": 4389.536473751068
+}

@@ -1,0 +1,27 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit",
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "train_size": 60000,
+  "calib_size": 15207,
+  "test_size": 35486,
+  "temperature": 1.1454540549505703,
+  "raw_report": {
+    "n": 35486,
+    "accuracy": 0.9224764695936426,
+    "brier": 0.11899672448635101,
+    "ece": 0.02320195772545331
+  },
+  "calibrated_report": {
+    "n": 35486,
+    "accuracy": 0.9224764695936426,
+    "brier": 0.12195060402154922,
+    "ece": 0.043680372365074764
+  },
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-22T20:36:43Z",
+  "total_train_seconds": 11429.790570020676
+}

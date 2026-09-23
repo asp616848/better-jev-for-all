@@ -358,6 +358,8 @@ A claim like "ekVachan beats Jev at StarCraft" is only true once section 8.1's h
 
 **What we still need to know before Phase 1 sizing is final**: the server's GPU model and VRAM (run `nvidia-smi` and share the output), and how many GPUs. That determines batch size and whether `ekvachan-vision`/`ekvachan-large` are same-session-feasible or need to wait/queue behind `ekvachan-base`. Everything in the table above assumes a single modern datacenter or high-end consumer GPU (e.g. anything from a 3090/4090 up through an A100/H100 class card) — if the server's card is smaller (e.g. under 16GB VRAM), `ekvachan-base` is still very achievable, just with smaller batch sizes and gradient accumulation, and `ekvachan-vision`/`ekvachan-large` would need either more VRAM or an int8/QLoRA fine-tuning path instead of full fine-tuning.
 
+**Recorded 2026-09-23** (`nvidia-smi`, shared lab server): single **NVIDIA L40S, 46068 MiB VRAM**, driver 580.126.09, compute capability 8.9. Comfortably in the "single modern datacenter GPU" bracket the table above assumes -- every real Phase 1 run so far (encoder 1.2M examples, decoder 24-60K examples) fit within this budget with room to spare, and the decoder's actual VRAM constraint has consistently been missing fused kernels (13a.2/13a.4), not raw capacity. Shared with other lab users -- observed utilization/load varies outside this project's own jobs.
+
 No cloud spend budget needed for this plan as it stands. If the server ever becomes a bottleneck (e.g. wanting to parallelize multiple experiments), a rented spot GPU (RunPod/Lambda/Vast.ai) remains a fallback option, not a requirement.
 
 ---

@@ -1,0 +1,27 @@
+{
+  "base_model": "answerdotai/ModernBERT-large",
+  "seed": 42,
+  "epochs": 2,
+  "batch_size": 32,
+  "lr": 2e-05,
+  "brier_lambda": 0.5,
+  "train_size": 1206855,
+  "calib_size": 15207,
+  "test_size": 35486,
+  "temperature": 1.345351259389615,
+  "raw_report": {
+    "n": 35486,
+    "accuracy": 0.8632418418531251,
+    "brier": 0.217163547873497,
+    "ece": 0.06889507095043657
+  },
+  "calibrated_report": {
+    "n": 35486,
+    "accuracy": 0.8632418418531251,
+    "brier": 0.20781338214874268,
+    "ece": 0.034438187444263114
+  },
+  "weight_sha256": "2c33ac79f5fd1cbfc0a719dfe9c78a41e83cf65515755e261eac083ffacff4b2",
+  "timestamp_utc": "2026-09-22T16:14:26Z",
+  "total_train_seconds": 19428.337152719498
+}

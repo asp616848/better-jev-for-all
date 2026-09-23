@@ -1,0 +1,125 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit-multischema",
+  "max_options": 10,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "train_size": 24000,
+  "calib_size": 900,
+  "eval_id_test_size": 2100,
+  "eval_ood_size": 3000,
+  "temperature": 0.9784030788217798,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 2100,
+    "accuracy": 0.9214285714285714,
+    "brier": 0.1114175096154213,
+    "ece": 0.013144738106500535
+  },
+  "eval_id_calibrated_report": {
+    "n": 2100,
+    "accuracy": 0.9214285714285714,
+    "brier": 0.11146774888038635,
+    "ece": 0.014054591769263861
+  },
+  "eval_id_raw_by_source": {
+    "anli_r1_dev": {
+      "n": 23,
+      "accuracy": 0.6086956521739131,
+      "brier": 0.5038493871688843,
+      "ece": 0.31223501070686005
+    },
+    "anli_r1_test": {
+      "n": 21,
+      "accuracy": 0.8095238095238095,
+      "brier": 0.31732887029647827,
+      "ece": 0.279707548164186
+    },
+    "anli_r2_dev": {
+      "n": 23,
+      "accuracy": 0.7391304347826086,
+      "brier": 0.3768558204174042,
+      "ece": 0.2541511447533317
+    },
+    "anli_r2_test": {
+      "n": 20,
+      "accuracy": 0.6,
+      "brier": 0.5186323523521423,
+      "ece": 0.33527844697237014
+    },
+    "anli_r3_dev": {
+      "n": 24,
+      "accuracy": 0.4583333333333333,
+      "brier": 0.6345742344856262,
+      "ece": 0.335272841155529
+    },
+    "anli_r3_test": {
+      "n": 26,
+      "accuracy": 0.5384615384615384,
+      "brier": 0.511269211769104,
+      "ece": 0.3473440317007212
+    },
+    "dbpedia_14_test": {
+      "n": 1050,
+      "accuracy": 0.9933333333333333,
+      "brier": 0.007888438180088997,
+      "ece": 0.0026310308774312326
+    },
+    "mnli_validation_matched": {
+      "n": 193,
+      "accuracy": 0.8963730569948186,
+      "brier": 0.15310265123844147,
+      "ece": 0.055333516758340626
+    },
+    "mnli_validation_mismatched": {
+      "n": 177,
+      "accuracy": 0.8870056497175142,
+      "brier": 0.16566719114780426,
+      "ece": 0.04944502835893361
+    },
+    "snli_test": {
+      "n": 226,
+      "accuracy": 0.9247787610619469,
+      "brier": 0.11825413256883621,
+      "ece": 0.03757916799688762
+    },
+    "snli_validation": {
+      "n": 205,
+      "accuracy": 0.9414634146341463,
+      "brier": 0.10364692658185959,
+      "ece": 0.04824380176823314
+    },
+    "wanli_test": {
+      "n": 112,
+      "accuracy": 0.6696428571428571,
+      "brier": 0.4735124409198761,
+      "ece": 0.18212404527834486
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.985,
+    "brier": 0.030591079965233803,
+    "ece": 0.03390668789545694
+  },
+  "eval_ood_calibrated_report": {
+    "n": 3000,
+    "accuracy": 0.985,
+    "brier": 0.03012450411915779,
+    "ece": 0.031645998954772936
+  },
+  "eval_ood_raw_by_source": {
+    "clinc150_oos_small": {
+      "n": 3000,
+      "accuracy": 0.985,
+      "brier": 0.030591079965233803,
+      "ece": 0.03390668789545694
+    }
+  },
+  "eval_ood_note": "zero training examples from this schema/source were seen during training -- this is the generalization test",
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-22T22:07:41Z",
+  "total_train_seconds": 3865.801610469818
+}
