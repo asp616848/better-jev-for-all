@@ -19,3 +19,5 @@ checkpoints/
 *.bin
 wandb/
 .claude/
+# dev/test lockfile for the SDK client package; the package itself ships unpinned
+sdk/python/uv.lock
