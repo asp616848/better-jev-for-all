@@ -1,0 +1,152 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit-primitives",
+  "max_options": 26,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "train_size": 24000,
+  "calib_size": 450,
+  "eval_id_test_size": 1050,
+  "eval_ood_size": 3000,
+  "temperature": 0.9272593528551164,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 1050,
+    "accuracy": 0.8723809523809524,
+    "brier": 0.18159447610378265,
+    "ece": 0.02274029845283144
+  },
+  "eval_id_calibrated_report": {
+    "n": 1050,
+    "accuracy": 0.8723809523809524,
+    "brier": 0.18176086246967316,
+    "ece": 0.024007553827194925
+  },
+  "eval_id_raw_by_source": {
+    "anli_r1_dev": {
+      "n": 5,
+      "accuracy": 1.0,
+      "brier": 0.1868438422679901,
+      "ece": 0.2941373825073242
+    },
+    "anli_r1_test": {
+      "n": 2,
+      "accuracy": 0.5,
+      "brier": 0.8580859899520874,
+      "ece": 0.5473932027816772
+    },
+    "anli_r2_dev": {
+      "n": 9,
+      "accuracy": 0.4444444444444444,
+      "brier": 0.6281620860099792,
+      "ece": 0.45394356052080787
+    },
+    "anli_r2_test": {
+      "n": 3,
+      "accuracy": 0.3333333333333333,
+      "brier": 0.4590110778808594,
+      "ece": 0.3701678315798442
+    },
+    "anli_r3_dev": {
+      "n": 10,
+      "accuracy": 0.6,
+      "brier": 0.7064470052719116,
+      "ece": 0.5201847344636917
+    },
+    "anli_r3_test": {
+      "n": 2,
+      "accuracy": 1.0,
+      "brier": 0.21626336872577667,
+      "ece": 0.32806579768657684
+    },
+    "boolq_validation": {
+      "n": 259,
+      "accuracy": 0.888030888030888,
+      "brier": 0.16152934730052948,
+      "ece": 0.04427284968865884
+    },
+    "dbpedia_14_fullwidth_test": {
+      "n": 270,
+      "accuracy": 0.9888888888888889,
+      "brier": 0.011221779510378838,
+      "ece": 0.002643349435594344
+    },
+    "mnli_validation_matched": {
+      "n": 59,
+      "accuracy": 0.9322033898305084,
+      "brier": 0.11636817455291748,
+      "ece": 0.09840884956262881
+    },
+    "mnli_validation_mismatched": {
+      "n": 44,
+      "accuracy": 0.8181818181818182,
+      "brier": 0.22471442818641663,
+      "ece": 0.11387425525621933
+    },
+    "snli_test": {
+      "n": 52,
+      "accuracy": 0.9038461538461539,
+      "brier": 0.12771403789520264,
+      "ece": 0.08714437713989846
+    },
+    "snli_validation": {
+      "n": 54,
+      "accuracy": 0.9074074074074074,
+      "brier": 0.1419549584388733,
+      "ece": 0.0959479135495645
+    },
+    "sp1786_sentiment_validation": {
+      "n": 252,
+      "accuracy": 0.753968253968254,
+      "brier": 0.35473334789276123,
+      "ece": 0.06580814955726504
+    },
+    "wanli_test": {
+      "n": 29,
+      "accuracy": 0.7931034482758621,
+      "brier": 0.28198838233947754,
+      "ece": 0.25992776299345083
+    }
+  },
+  "eval_id_raw_by_question_type": {
+    "choice": {
+      "n": 539,
+      "accuracy": 0.9202226345083488,
+      "brier": 0.11028808355331421,
+      "ece": 0.02304827945794158
+    },
+    "noul": {
+      "n": 259,
+      "accuracy": 0.888030888030888,
+      "brier": 0.16152934730052948,
+      "ece": 0.04427284968865884
+    },
+    "score": {
+      "n": 252,
+      "accuracy": 0.753968253968254,
+      "brier": 0.35473334789276123,
+      "ece": 0.06580814955726504
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.9573333333333334,
+    "brier": 0.07935260981321335,
+    "ece": 0.07496095005671181
+  },
+  "eval_ood_raw_by_source": {
+    "clinc150_oos_small_wide": {
+      "n": 3000,
+      "accuracy": 0.9573333333333334,
+      "brier": 0.07935260981321335,
+      "ece": 0.07496095005671181
+    }
+  },
+  "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval, reused unchanged from 13a.6 as a regression check -- does mixing in noul/score hurt choice generalization?",
+  "primitives_note": "First run mixing noul (BoolQ) and score (Sp1786 sentiment, 3-level) primitives into training. eval_id_raw_by_question_type is the load-bearing new number -- accuracy/ECE/Brier per primitive type, still measured via the existing choice-style argmax metric as a proxy (see build_primitives_slice.py docstring for what this does and does not establish).",
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-23T11:09:35Z",
+  "total_train_seconds": 4638.085366010666
+}

@@ -578,6 +578,26 @@ The `ekvachan-decoder-qwen-wideschema` checkpoint (13a.6) -- trained on DBpedia-
 
 Context, not a direct comparison (different item subsets and scoring protocols, stated explicitly rather than implied): Von reports 72.0% macro-accuracy on jabr-v2's full 869-case v2 suite; this run only attempted the schema-answerable items (2-26 options, gold label present in the options list), not the full suite, and used forced per-item argmax rather than Von's own scoring protocol.
 
+
+### 13a.8 First noul/score training run: the real unlock for the 92/231 + 557/944 items (2026-09-23)
+
+STATUS.md's 2026-09-23 review found the remaining unattempted JevBench/jabr-v2 items (92 and 557 respectively) are 100% `noul`/`score` type, not blocked by option width -- the cross-attention head (5.1a) does nothing for a scalar score or a yes/no proposition, so training these two missing primitives is the actual next step, not an architecture change. `training/build_primitives_slice.py` (BoolQ -> `noul`, CC-BY-SA-3.0; Sp1786 3-level sentiment -> `score`, Apache-2.0, both license-checked directly against the HF Hub API) + `training/train_decoder_lora_primitives.py` (forked from the wideschema trainer; `score` rows use a fixed ascending scale order instead of the per-example letter shuffle, since ordinal position must stay consistent for the softmax's neighboring-letter mass to mean "landed between levels" -- see that script's docstring) mixed both into the existing NLI/DBpedia-14 `choice` data and trained one epoch, 24k examples, 71m54s.
+
+| Question type | n | Accuracy | Brier | ECE |
+|---|---|---|---|---|
+| `choice` (continuity/regression check) | 539 | 92.02% | 0.1103 | 0.0230 |
+| **`noul`** (BoolQ, new) | 259 | **88.80%** | 0.1615 | 0.0443 |
+| **`score`** (Sp1786 sentiment, 3-level, new) | 252 | **75.40%** | 0.3547 | 0.0658 |
+
+**`choice` generalization survived the primitive mix**: the CLINC150 wide zero-shot-schema regression check (reused unchanged from 13a.6) scored 95.73% here vs. 13a.6's 96.10% -- a 0.37pp difference, indistinguishable from noise at this scale. Mixing in two new primitives did not meaningfully hurt what was already working.
+
+**`noul` looks real on a first pass** -- 88.80% on a genuine yes/no reading-comprehension task, well above chance, with the second-best ECE in the table.
+
+**`score` is a real, honest weak spot, not swept under**: 75.40% accuracy and by far the worst Brier (0.355 vs 0.11-0.16 for everything else) on only a 3-way ordinal task -- worse than `choice`'s untrained-from-scratch baseline ever was on a comparably-sized schema. Two credible, not-yet-disentangled explanations: (1) 3-level sentiment is semantically subtler than a well-defined encyclopedia category or a passage-grounded yes/no -- genuine task difficulty, not a mechanism failure; (2) this is the first run ever to withhold the letter shuffle for an entire question type, and the fixed-order design is unverified beyond "it ran without crashing." Both need a follow-up to distinguish -- not concluded here.
+
+**What this run does not establish, stated as precisely as 13a.5/13a.6 did for their own caveats**: `eval_id_raw_by_question_type` still scores `noul`/`score` via the existing argmax-over-letters metric, a proxy -- not `noul`'s real served float output or `score`'s probability-weighted scale position (PRD 1.2's "can land between levels"), neither of which is wired into `serve/`/`benchmarks/` yet. Evidence bundle: `checkpoints/ekvachan-decoder-qwen-primitives/manifest.json` (`results/ekvachan-decoder-qwen-primitives.train-manifest.json` once copied per dev-guidelines rule 10).
+
+Same night, in parallel: `serve/server.py` now defaults to the decoder (`serve.inference.DecoderChoiceModel`, wrapping `benchmarks.common.backends.DecoderMultischemaBackend`) instead of the original fixed-schema encoder -- closing the gap between "decoder is primary" (14 Q4) and what the live server actually answered. `score`/`noul` still return 501 from the wire contract, for the reason directly above.
 The honest remainder, unchanged from 13a.5/13a.6: this is not `is_complete_benchmark_score` on either dataset (92/231 and 557/944 items are still out of reach -- `noul`/`score` types and >26-option `choice` items, per the schema-filter's own unsupported-reason counts), and a fair head-to-head against Von's own published number requires either running the full unfiltered suite (not possible for this architecture without 5.1a's cross-attention head or a multi-token option scheme) or getting Von's own per-item schema-answerable subset for a like-for-like comparison. Evidence bundles: `results/jevbench-decoder_multischema-20260923T084856Z.manifest.json`, `results/jabr_v2-decoder_multischema-20260923T085009Z.manifest.json`.
 ---
 
