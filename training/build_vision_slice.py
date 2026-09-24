@@ -199,39 +199,67 @@ def load_vision_source_records(path: Path) -> tuple[list[dict], list[dict]]:
     return train, eval_id
 
 
-def _assert_within_token_budget(records: list[dict], base_model: str, max_length: int, max_pixels: int) -> None:
+def _assert_within_token_budget(vision_records: list[dict], text_records: list[dict],
+                                 base_model: str, max_length: int, max_pixels: int) -> None:
     """PRD 5.2b's required per-row assertion, run for real against the actual
-    processor at build time -- fail loudly here, before a single GPU cycle is
-    spent, rather than truncating silently mid-run."""
-    if not records:
-        return
-    from PIL import Image
-    from transformers import AutoProcessor
+    processor/tokenizer at build time -- fail loudly here, before a single GPU
+    cycle is spent, rather than truncating silently mid-run.
 
-    proc = AutoProcessor.from_pretrained(base_model, max_pixels=max_pixels)
-    violations = []
-    for i, r in enumerate(records):
+    **Fixed 2026-09-24, found by the first real full-scale run crashing on it**:
+    this originally checked vision rows only. That missed the actual failure
+    mode -- 13a.10's inherited 62,000 text rows were never audited against the
+    *new* (768, up from 384) budget at all, and 86 of them (0.14%, max 1,171
+    tokens, from `bjb:cfpb_complaints/product`'s longer complaint narratives)
+    exceed it. `decoder_lora_lib.py`'s collate-time assertion caught this at
+    the first mixed batch that happened to draw one -- correctly, since
+    fail-loud-at-runtime is the designed fallback, but this build-time check
+    should have caught it first, which is the whole point of having it. Now
+    checks every row, vision or not, with the tokenizer for text-only rows
+    (cheap, no image I/O) and the processor for vision rows (as before)."""
+    from transformers import AutoTokenizer, AutoProcessor
+
+    def _row_text(r: dict) -> str:
         options = r["options"]
         n = len(options)
         letters = [chr(ord("A") + j) for j in range(n)]
         option_lines = "\n".join(f"{letters[j]}) {options[j]}" for j in range(n))
-        text = (f"{r['instructions']}\n\n{r['state']}\n\nOptions:\n{option_lines}\n\n"
+        return (f"{r['instructions']}\n\n{r['state']}\n\nOptions:\n{option_lines}\n\n"
                 f"Answer with a single letter ({'/'.join(letters)}).")
-        messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text}]}]
-        rendered = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-        img = Image.open(r["images"][0]).convert("RGB")
-        enc = proc(text=[rendered], images=[img], return_tensors="pt")
-        n_tokens = enc["input_ids"].shape[1]
-        if n_tokens >= max_length:
-            violations.append((r.get("source"), r["images"][0], n_tokens))
+
+    violations = []
+
+    if text_records:
+        tok = AutoTokenizer.from_pretrained(base_model)
+        for r in text_records:
+            text = _row_text(r)
+            messages = [{"role": "user", "content": text}]
+            rendered = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+            n_tokens = len(tok(rendered)["input_ids"])
+            if n_tokens >= max_length:
+                violations.append((r.get("source"), None, n_tokens))
+
+    if vision_records:
+        from PIL import Image
+        proc = AutoProcessor.from_pretrained(base_model, max_pixels=max_pixels)
+        for r in vision_records:
+            text = _row_text(r)
+            messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text}]}]
+            rendered = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+            img = Image.open(r["images"][0]).convert("RGB")
+            enc = proc(text=[rendered], images=[img], return_tensors="pt")
+            n_tokens = enc["input_ids"].shape[1]
+            if n_tokens >= max_length:
+                violations.append((r.get("source"), r["images"][0], n_tokens))
+
     if violations:
         raise ValueError(
-            f"{len(violations)} vision row(s) exceed --max-length {max_length} tokens after processing "
-            f"(image + text): {violations[:5]} ... refusing to emit a slice that would silently truncate. "
-            f"Lower resolution (raise --max-pixels cap tighter) or raise --max-length."
+            f"{len(violations)} row(s) (text and/or vision) exceed --max-length {max_length} tokens: "
+            f"{violations[:5]} ... refusing to emit a slice that would silently truncate. "
+            f"Raise --max-length (a text outlier needs headroom independent of --max-pixels), or exclude "
+            f"the offending source explicitly and say so."
         )
-    print(f"token-budget assertion passed: {len(records)} vision row(s), all < {max_length} tokens "
-          f"(max_pixels={max_pixels})")
+    print(f"token-budget assertion passed: {len(vision_records)} vision + {len(text_records)} text row(s), "
+          f"all < {max_length} tokens (max_pixels={max_pixels})")
 
 
 def _validate(records: list[dict], name: str) -> None:
@@ -287,8 +315,8 @@ def build(out_dir: Path, *, smoke: bool, n_smoke_images: int, n_smoke_text: int,
             eval_id_records = rng.sample(eval_id_records, min(max(1, n_smoke_text // 10), len(eval_id_records)))
 
     all_vision = vision_train + vision_eval_id
-    if all_vision:
-        _assert_within_token_budget(all_vision, base_model, max_length, max_pixels)
+    all_text = [r for r in (train_records + eval_id_records) if not r.get("images")]
+    _assert_within_token_budget(all_vision, all_text, base_model, max_length, max_pixels)
 
     train_records = train_records + vision_train
     eval_id_records = eval_id_records + vision_eval_id
