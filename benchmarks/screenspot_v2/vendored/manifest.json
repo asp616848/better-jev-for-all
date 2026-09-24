@@ -1,0 +1,30 @@
+{
+  "protocol": "screenspot_v2::via-better-jev-bench::v1",
+  "source_repo": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2",
+  "source_hf_revision": "5efbb1f1b5463a575f2eb7bc30fe29e49c15f93c",
+  "license_spdx": "Apache-2.0",
+  "license_verified_how": "HF Hub API: cardData['license'] == 'apache-2.0' for OS-Copilot/ScreenSpot-v2, queried independently 2026-09-24; also matches better-jev-bench's own verification in datasets/screenspot_v2/manifest.toml.",
+  "vendored_via": "better-jev-bench (sibling repo asp616848/better-jev-bench), not fetched from HuggingFace directly",
+  "vendored_via_dataset_module": "better_jev_bench/datasets/screenspot_v2.py",
+  "vendored_via_manifest": "datasets/screenspot_v2/manifest.toml",
+  "export_command": "cd better-jev-bench && uv run bjb export --slice heldout --datasets screenspot_v2 --out <dir>",
+  "export_command_note": "ScreenSpot-v2 is dataset.eval_only=true in better-jev-bench's own manifest; `--slice public` emits 0 records for it by design (better_jev_bench/export.py's slice-gating logic, verified by reading the code and then actually running the export). `--slice heldout` is the only real path to any items, and it emits 858, not the manifest's headline item_count of 898 (= 40 public + 858 heldout) -- the 40 public rows are unreachable through the sanctioned export path for an eval_only dataset.",
+  "vendored_file": "heldout.jsonl",
+  "vendored_file_sha256": "62631dc9a5ff1fc13a32adf696ccf911373919b6730fc6d8eb3391b6c0ae8826",
+  "vendored_file_n_records": 858,
+  "vendored_on": "2026-09-24",
+  "vendored_record_schema": [
+    "state", "question_key", "question_type", "instructions",
+    "options", "label", "label_idx", "source", "images"
+  ],
+  "vendored_record_schema_note": "better-jev-bench's own bjb export record shape (8 text keys + images, PRD.md 13a.11 / better-jev-bench PRD §13.4). Each record's own `options` is a real binary (label, cyclic-neighbor-distractor) pair -- see better_jev_bench/datasets/screenspot_v2.py's docstring. benchmarks/screenspot_v2/loader.py reframes these into genuine N-way items; it does not consume this file's `options` field as the final item schema.",
+  "images_vendored_here": false,
+  "images_note": "Images are NOT vendored into this repo -- resolved fresh at load time from better-jev-bench's own content-addressed cache (data/images/screenspot_v2/<sha256[:2]>/<sha256>.<ext>) and re-hashed before use. See benchmarks/screenspot_v2/README.md's 'Vendoring: images vs. metadata' section for the full tradeoff writeup. 356 distinct images, ~370MB, behind these 858 records.",
+  "n_distinct_images": 356,
+  "reframing": {
+    "method": "group all 858 exported rows by shared image; take the union of every row's own (label, distractor) option pair as that image's real candidate pool; emit one N-way choice item per original row, options = the full pool (sorted), expected = that row's own real label",
+    "pool_size_histogram_by_item_count": {"2": 412, "3": 310, "4": 92, "5": 39, "6": 5},
+    "n_items_excluded_pool_too_small": 0,
+    "computed_on": "2026-09-24, over the real 858-record export above"
+  }
+}
