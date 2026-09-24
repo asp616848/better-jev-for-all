@@ -21,3 +21,8 @@ wandb/
 .claude/
 # dev/test lockfile for the SDK client package; the package itself ships unpinned
 sdk/python/uv.lock
+# ViZDoom (PRD 8.1d): DAgger-teacher (text, frame, action) triples are real, regenerable
+# per-checkpoint rollout output -- same discipline as checkpoints/ and results/*.raw, never
+# checked into git. _vizdoom.ini is a runtime config ViZDoom writes to the cwd on init.
+training/dagger_data/
+_vizdoom.ini
