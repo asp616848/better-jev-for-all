@@ -1,12 +1,27 @@
 # benchmarks/
 
-Standing benchmark harnesses for PRD.md Section 8: **JevBench** (`jevbench/`)
-and **jabr-v2** (`jabr_v2/`). Both are real, runnable, tested harnesses.
-Against the only checkpoint that existed when this was first built
-(`ekvachan-base`, the fixed-3-class encoder), both reported the same honest
-headline number: **0 real items answerable.** That result is unchanged and
-still real evidence (PRD.md 13a.1/13a.3) — see "The one fact that shapes
-everything in here" below, and each subdirectory's README, for it.
+Standing benchmark harnesses for PRD.md Section 8: **JevBench** (`jevbench/`),
+**jabr-v2** (`jabr_v2/`), and **ScreenSpot-v2** (`screenspot_v2/`, PRD.md
+5.2b/13a.11 — the vision analogue of the other two, added 2026-09-24). All
+three are real, runnable, tested harnesses. Against the only checkpoint that
+existed when the first two were built (`ekvachan-base`, the fixed-3-class
+encoder), both reported the same honest headline number: **0 real items
+answerable.** That result is unchanged and still real evidence (PRD.md
+13a.1/13a.3) — see "The one fact that shapes everything in here" below, and
+each subdirectory's README, for it.
+
+**Update 2026-09-24 (PRD.md 5.2b/13a.11): ScreenSpot-v2 added.** A third
+standing benchmark, vendored (as metadata only — see its own README's
+"Vendoring: images vs. metadata") via the sibling `better-jev-bench` repo's
+`bjb export --slice heldout`. 858 real items (not the upstream manifest's
+headline 898 — see `benchmarks/screenspot_v2/README.md` for why), reframed
+from ScreenSpot-v2's own binary grounding format into genuine N-way
+(2-to-6-option) `choice` items, real distractors only, 0 items excluded. Runs
+today with `--backend decoder-vision-multischema-mock` (real data, real image
+hash-verification, no torch/checkpoint needed) and against
+`checkpoints/ekvachan-decoder-qwen-vision` (PRD.md 13a.11, training as of
+this writing) with `--backend decoder-vision-multischema` the moment it
+lands.
 
 **Update 2026-09-23 (PRD.md Section 14 Q4 / 13a.5):** the decoder (Qwen3.5-4B
 LoRA, restricted-logit read) is now the primary architecture, and its
@@ -82,8 +97,11 @@ benchmarks/
                         not an import)
     schema_filter.py    decides which items are answerable -- the single
                         place that logic is allowed to live
-    backends.py         InProcessBackend / HTTPBackend / MockBackend, one
-                        interface, three ways to actually answer a question
+    backends.py         InProcessBackend / HTTPBackend / MockBackend (fixed-
+                        schema); DecoderMultischemaBackend[-Mock] (text
+                        multischema); DecoderVisionMultischemaBackend[-Mock]
+                        (vision multischema, PRD.md 5.2b/13a.11) -- one
+                        interface, every way to actually answer a question
     evidence.py         writes the PRD.md 8.2 evidence bundle to results/
     harness.py          the shared run loop + CLI argument parser
   jevbench/
@@ -96,6 +114,14 @@ benchmarks/
     fixtures/
     loader.py, run.py
     README.md            what was verified, the real item counts, the finding
+  screenspot_v2/
+    vendored/            vendored metadata only (Apache-2.0) -- see NOTICE.md;
+                        images referenced from better-jev-bench's cache, not
+                        vendored (see this dir's own README)
+    fixtures/            synthetic self-test fixture + two tiny real PNGs
+    loader.py, run.py
+    README.md            what was verified, the real 858-item count, the
+                        grounding-as-choice N-way reframing
 ```
 
 ## Running a harness
@@ -124,6 +150,19 @@ python -m benchmarks.jabr_v2.run --backend decoder-multischema --checkpoint-dir 
 # torch, transformers, or peft needed:
 python -m benchmarks.jevbench.run --backend decoder-multischema-mock
 python -m benchmarks.jabr_v2.run --backend decoder-multischema-mock
+
+# Vision multischema path (PRD.md 5.2b/13a.11) -- real ScreenSpot-v2 data
+# (858 real N-way grounding items), against checkpoints/ekvachan-decoder-qwen-vision
+# once it exists:
+python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema \
+    --checkpoint-dir checkpoints/ekvachan-decoder-qwen-vision
+
+# Vision multischema wiring self-test -- real 858-item dataset, real image
+# hash-verification against better-jev-bench's cache, answered by a
+# non-trained stub that never looks at the image -- no checkpoint, torch,
+# transformers, or peft needed:
+python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema-mock
+python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema-mock --selftest
 ```
 
 Every run writes two files to `results/`:
