@@ -1181,6 +1181,31 @@ That is 8.1d's actual milestone: Von's own 9.00 kills / 12.11s survival, compare
 **One deliberate contract revision, recorded per dev-guidelines rule 1**: PRD 6.2 originally proposed a 4th primitive, `vision_choice`, for image support. Superseded here -- since an image-bearing `choice` item uses the exact same restricted-logit mechanism as a text-only one (5.2b's own finding), the simpler design is one `choice` primitive with an optional `image` field, not a separate primitive type. `noul`/`score` gained the same optional field for consistency, though no real vision-noul/vision-score training data exists yet to back it with evidence -- that's real future work, not claimed here.
 
 
+### 13a.15 Every built-but-unrun evaluation, run for real against the vision checkpoint (2026-09-24)
+
+All harnesses built this session (13a.7's JevBench/jabr-v2, 13a.12's ScreenSpot-v2, 13a.13's ViZDoom) run against `checkpoints/ekvachan-decoder-qwen-vision` for the first time. Real numbers, reported together and honestly, including the ones that went down.
+
+**JevBench and jabr-v2: a real, small decrease -- not hidden.** JevBench: 79.86% (was 83.45% on the benchcorpus checkpoint, 13a.7), n=139 unchanged. jabr-v2: 87.08% (was 88.89%), n=387 unchanged. This is a genuine tension with 13a.14's own finding that the vision checkpoint's *aggregate* text accuracy improved +7.68pp on our own held-out sources. Reading both together: 13a.14's improvement is concentrated in the specific domains the wider bench corpus added (CFPB, LEDGAR, ANLI) -- JevBench/jabr-v2 draw from a different, independent item distribution that doesn't overlap those domains the same way, so an in-distribution improvement doesn't guarantee an out-of-distribution one. Both drops are within the range a handful of flipped predictions would produce at these n (139, 387), so this is not a large effect -- but it is a real, directionally consistent one (both went down, not up), worth tracking on the next retrain rather than dismissing as pure noise.
+
+**ScreenSpot-v2: the first real vision benchmark number.** **69.23% accuracy**, n=858, `is_complete_benchmark_score: true` (every real item attempted -- the only benchmark in this project's suite that can say that so far, since ScreenSpot-v2 doesn't have the `noul`/`score`-primitive gap JevBench/jabr-v2 do). Third-party, zero-training-exposure, real screenshots. This is the first genuine evidence point for the vision capability beyond this project's own eval slice.
+
+**ViZDoom: the real Von comparison, run for the first time.**
+
+| Policy | Defend the Center (kills, Von's rubric) | Health Gathering (survival, Von's rubric) |
+|---|---|---|
+| Random baseline | 1.53 | 14.09s |
+| Jev (published) | 5.62 | 13.03s |
+| **ekVachan (this run)** | **8.25** | **32.86s** |
+| Von (published) | 9.00 | 12.11s |
+| Rubric-oracle (no model, 13a.13) | 11.125 | -- |
+
+**Defend the Center, the real headline**: ekVachan decisively beats Jev (8.25 vs 5.62, +47%) and comes within ~8% of Von's own published number (8.25 vs 9.00) -- genuinely competitive for a first real run, not a clean win over Von but a credible result in the same tier. **Without Von's rubric embedded** (bare task description, no if/then rule): kills collapse to 1.88, barely above random -- an honest, important finding that most of the game-competent behavior in the rubric='von' number comes from the rubric's explicit rule doing real work in the prompt, not from raw visual/game understanding the model brought on its own. Report both numbers together, always -- reporting only the rubric='von' number would overstate what's actually been demonstrated.
+
+**Health Gathering**: 32.86s comfortably clears Jev, Von, *and* the random baseline (13a.13 already established this metric doesn't discriminate between weak policies -- random already beat both Jev and Von). The honest framing here is "clearly smarter than random by a wide margin" (32.86s vs 14.09s), not "beats Von," since Von's own 12.11s was already below the random floor.
+
+Evidence: `results/{jevbench,jabr_v2}-decoder_multischema-20260924T0744*/0745*.manifest.json`, `results/screenspot_v2-decoder_vision_multischema-20260924T074849Z.manifest.json`, `results/vizdoom-{defend_the_center,health_gathering}-{von,none}-decoder_vision_multischema-20260924T07*.manifest.json`.
+
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:

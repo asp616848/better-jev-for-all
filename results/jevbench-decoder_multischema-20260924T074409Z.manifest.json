@@ -1,0 +1,52 @@
+{
+  "benchmark": "jevbench",
+  "run_id": "jevbench-decoder_multischema-20260924T074409Z",
+  "timestamp_utc": "2026-09-24T07:44:09Z",
+  "seed": 0,
+  "harness_git_commit": "6b56b953c836944b1f999d5913fd54d024929d2d",
+  "dataset": {
+    "source_repo": "https://github.com/fstandhartinger/jevbench",
+    "license": "MIT (repo-level license verified via GitHub API 2026-09-22; every vendored record also carries its own provenance.license == \"MIT\" field)",
+    "vendored_files": [
+      "easy.jsonl",
+      "hard.jsonl",
+      "original.jsonl"
+    ],
+    "n_public_items": 231,
+    "n_total_incl_heldout": 534,
+    "note": "231 of JevBench v1.2's 534 total decisions are public (original 72, easy 48, hard 111); the remaining 303 (heldout 24, router 78, judge 68, easy-heldout 24, 109 more hard items) are deliberately unpublished by upstream and cannot be vendored here -- see benchmarks/jevbench/README.md."
+  },
+  "schema_filter": {
+    "max_options": 26,
+    "unsupported_reasons": {
+      "question_type='noul' (no trained model for 'score'/'noul')": 74,
+      "question_type='score' (no trained model for 'score'/'noul')": 18
+    }
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema",
+    "checkpoint_name": "ekvachan-decoder-qwen-vision",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "architecture": "decoder-lora-restricted-logit-general",
+    "max_options": 26,
+    "temperature_applied": false,
+    "temperature": null,
+    "calibration_note": "raw (uncalibrated) probabilities by default -- PRD.md 13a.2/13a.5 found temperature scaling makes this architecture's ECE/Brier worse, not better; pass apply_temperature=True / --decoder-apply-temperature to override",
+    "device": "cuda"
+  },
+  "results": {
+    "n_items_considered": 231,
+    "n_supported_by_multischema_cap": 139,
+    "n_unsupported": 92,
+    "n_supported_with_image": 0,
+    "n": 139,
+    "accuracy": 0.7985611510791367,
+    "brier": 0.2794765748917298,
+    "ece": 0.047517273923475975,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_multischema_cap is how many items a decoder/multischema model could legitimately attempt (a 'choice' item with between 2 and max_options=26 options, whose gold label is one of them). n_supported_with_image is how many of those items also carry a real screenshot (PRD.md 5.2b/13a.11) -- only decoder-vision-multischema[-mock] backends actually use it; every other backend here ignores an item's image the same way it ignores `instructions` if it doesn't need it. is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jevbench-decoder_multischema-20260924T074409Z.raw",
+  "harness_selftest": false
+}

@@ -1,0 +1,164 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-defend_the_center-none-decoder_vision_multischema-20260924T075305Z",
+  "timestamp_utc": "2026-09-24T07:53:05Z",
+  "seed": 0,
+  "harness_git_commit": "6b56b953c836944b1f999d5913fd54d024929d2d",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/defend_the_center.cfg (stock, ships in the wheel)",
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "none",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "attack",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "You are controlling a marine stationed in a central turret in a ViZDoom arena. Your goal is to survive and kill as many enemies as possible. Choose the action to take next, given the situation described below."
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_vision_multischema",
+    "checkpoint_name": "ekvachan-decoder-qwen-vision",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "architecture": "decoder-lora-restricted-logit-general",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "max_options": 26,
+    "max_pixels": 200704,
+    "n_lora_modules": 128,
+    "vision_tower_frozen": true,
+    "temperature_applied": false,
+    "temperature": null,
+    "calibration_note": "raw (uncalibrated) probabilities by default -- PRD.md 13a.2/13a.5 found temperature scaling makes this architecture's ECE/Brier worse, not better (finding is about the mechanism, predates vision); pass apply_temperature=True / --decoder-apply-temperature to override",
+    "device": "cuda"
+  },
+  "results": {
+    "scenario": "defend_the_center",
+    "rubric": "none",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "n_decisions": 692,
+    "n_out_of_schema": 0,
+    "kills_by_episode": [
+      {
+        "seed": 42106076,
+        "episode_index": 0,
+        "steps": 90,
+        "kills": 2.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 95.05360247567296,
+        "latency_ms_p95": 118.09244058094917
+      },
+      {
+        "seed": 42106077,
+        "episode_index": 0,
+        "steps": 113,
+        "kills": 3.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 96.1817940697074,
+        "latency_ms_p95": 120.190985314548
+      },
+      {
+        "seed": 42106078,
+        "episode_index": 0,
+        "steps": 80,
+        "kills": 2.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 91.74067806452513,
+        "latency_ms_p95": 112.17412250116467
+      },
+      {
+        "seed": 42106079,
+        "episode_index": 0,
+        "steps": 101,
+        "kills": 3.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 94.71342153847218,
+        "latency_ms_p95": 159.45375431329012
+      },
+      {
+        "seed": 42106080,
+        "episode_index": 0,
+        "steps": 58,
+        "kills": 1.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 92.11988840252161,
+        "latency_ms_p95": 111.25209350138903
+      },
+      {
+        "seed": 42106081,
+        "episode_index": 0,
+        "steps": 72,
+        "kills": 1.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 96.20046522468328,
+        "latency_ms_p95": 150.72374138981112
+      },
+      {
+        "seed": 42106082,
+        "episode_index": 0,
+        "steps": 89,
+        "kills": 2.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 95.6531623378396,
+        "latency_ms_p95": 116.50887429714203
+      },
+      {
+        "seed": 42106083,
+        "episode_index": 0,
+        "steps": 89,
+        "kills": 1.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 94.44645326584578,
+        "latency_ms_p95": 113.0246227607131
+      }
+    ],
+    "kills_aggregate": {
+      "mean": 1.875,
+      "sd": 0.7806247497997998,
+      "min": 1.0,
+      "max": 3.0,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 692,
+      "accuracy": 0.046242774566473986,
+      "brier": 1.2029277481182914,
+      "ece": 0.7093504800789617,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-defend_the_center-none-decoder_vision_multischema-20260924T075305Z.raw",
+  "episodic": true
+}
