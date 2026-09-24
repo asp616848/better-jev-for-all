@@ -1,23 +1,25 @@
 """
 Shared run loop: filter -> (maybe) call a backend on the supported items ->
 score with eval/metrics.py -> write a PRD.md Section 8.2 evidence bundle.
-benchmarks/jevbench/run.py and benchmarks/jabr_v2/run.py are thin CLI
-wrappers around run_harness() below -- loading the dataset and describing its
-provenance is the only genuinely benchmark-specific part.
+benchmarks/jevbench/run.py, benchmarks/jabr_v2/run.py, and
+benchmarks/screenspot_v2/run.py are thin CLI wrappers around run_harness()
+below -- loading the dataset and describing its provenance is the only
+genuinely benchmark-specific part.
 
 Deliberately structured so that filtering happens *before* any backend is
 built: for the fixed-schema path (`--backend in_process|http|mock`),
 benchmarks/common/schema.FIXED_CHECKPOINT_LABELS is enough to know which
-items are even answerable; for the decoder/multischema path (`--backend
-decoder-multischema[-mock]`), benchmarks/common/schema.DECODER_MULTISCHEMA_
-MAX_OPTIONS (or --max-options) is enough. Both are dataset-only checks with
-no torch/transformers/peft/checkpoint dependency. A backend (which may need
-all of those) is only constructed if there's at least one supported item to
-actually run. That is what lets a real run against the real vendored
-datasets execute -- and produce a real, honest evidence bundle even when 0
-items are supported -- in an environment with no ML stack installed at all,
-which is exactly the environment this was built and tested in. See
-benchmarks/README.md.
+items are even answerable; for either multischema path (`--backend
+decoder-multischema[-mock]` or `--backend decoder-vision-multischema[-mock]`),
+benchmarks/common/schema.DECODER_MULTISCHEMA_MAX_OPTIONS (or --max-options)
+is enough. All are dataset-only checks with no torch/transformers/peft/
+checkpoint dependency. A backend (which may need all of those, plus pillow/
+torchvision for the vision arm) is only constructed if there's at least one
+supported item to actually run. That is what lets a real run against the
+real vendored datasets execute -- and produce a real, honest evidence bundle
+even when 0 items are supported -- in an environment with no ML stack
+installed at all, which is exactly the environment this was built and tested
+in. See benchmarks/README.md.
 """
 
 from __future__ import annotations
@@ -38,8 +40,16 @@ RESULTS_DIR = REPO_ROOT / "results"
 
 # Backends that answer ANY choice question with 2..max_options options,
 # rather than one hardcoded label set -- see benchmarks/common/backends.py
-# and PRD.md Section 14 Q4 / 13a.5.
-MULTISCHEMA_BACKENDS = {"decoder-multischema", "decoder-multischema-mock"}
+# and PRD.md Section 14 Q4 / 13a.5. The vision arm (PRD.md 5.2b/13a.11)
+# answers the exact same 2..max_options schema, just optionally with an image
+# attached to the item -- `filter_supported_multischema` needs no changes at
+# all for it (an item's option *count* is what's being filtered on, and a
+# `choice` item with an image is still, structurally, a `choice` item).
+MULTISCHEMA_BACKENDS = {
+    "decoder-multischema", "decoder-multischema-mock",
+    "decoder-vision-multischema", "decoder-vision-multischema-mock",
+}
+VISION_BACKENDS = {"decoder-vision-multischema", "decoder-vision-multischema-mock"}
 
 
 def build_backend(args: argparse.Namespace):
@@ -65,6 +75,24 @@ def build_backend(args: argparse.Namespace):
         )
     if args.backend == "decoder-multischema-mock":
         return backends.DecoderMultischemaMockBackend(max_options=args.max_options or DECODER_MULTISCHEMA_MAX_OPTIONS)
+    if args.backend == "decoder-vision-multischema":
+        if not args.checkpoint_dir:
+            raise ValueError(
+                "--backend decoder-vision-multischema requires --checkpoint-dir -- point it at "
+                "checkpoints/ekvachan-decoder-qwen-vision (PRD.md 13a.11) or an equivalent "
+                "train_decoder_lora_general.py output dir trained on vision-bearing data. "
+                "checkpoints/ is gitignored, so there is no default the way in_process has one."
+            )
+        return backends.DecoderVisionMultischemaBackend(
+            Path(args.checkpoint_dir),
+            base_model=args.base_model,
+            apply_temperature=args.decoder_apply_temperature,
+            max_pixels=args.max_pixels,
+        )
+    if args.backend == "decoder-vision-multischema-mock":
+        return backends.DecoderVisionMultischemaMockBackend(
+            max_options=args.max_options or DECODER_MULTISCHEMA_MAX_OPTIONS
+        )
     raise ValueError(f"unknown backend {args.backend!r}")
 
 
@@ -72,37 +100,53 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=prog)
     p.add_argument(
         "--backend",
-        choices=["in_process", "http", "mock", "decoder-multischema", "decoder-multischema-mock"],
+        choices=[
+            "in_process", "http", "mock",
+            "decoder-multischema", "decoder-multischema-mock",
+            "decoder-vision-multischema", "decoder-vision-multischema-mock",
+        ],
         default="in_process",
         help="in_process imports serve.inference.EncoderChoiceModel directly (needs torch/"
              "transformers and a real fixed-schema checkpoint on disk); http calls a running "
              "serve/server.py over the wire (needs no local ML stack, but a server must already be "
              "up); mock is a non-trained fixed-schema wiring self-test, only meaningful together "
-             "with --selftest. decoder-multischema loads a LoRA adapter checkpoint from "
-             "train_decoder_lora_wideschema.py (needs torch/transformers/peft and --checkpoint-dir "
-             "pointing at one -- see PRD.md 13a.5); decoder-multischema-mock is that path's "
-             "non-trained wiring self-test.",
+             "with --selftest. decoder-multischema loads a text-only LoRA adapter checkpoint from "
+             "train_decoder_lora_wideschema.py/_benchcorpus.py/_general.py (needs torch/transformers/"
+             "peft and --checkpoint-dir pointing at one -- see PRD.md 13a.5); "
+             "decoder-multischema-mock is that path's non-trained wiring self-test. "
+             "decoder-vision-multischema loads a vision-bearing checkpoint from "
+             "train_decoder_lora_general.py (needs torch/transformers/peft/pillow/torchvision and "
+             "--checkpoint-dir pointing at one -- see PRD.md 5.2b/13a.11); it can answer both "
+             "text-only and image-bearing choice items. decoder-vision-multischema-mock is that "
+             "path's non-trained wiring self-test (it never looks at the image).",
     )
     p.add_argument("--http-endpoint", default="http://127.0.0.1:8000")
     p.add_argument("--checkpoint-dir", default=None,
                     help="for in_process: override serve.inference's default checkpoint path. For "
-                         "decoder-multischema: REQUIRED, path to a train_decoder_lora_wideschema.py "
-                         "(or _multischema) output dir containing manifest.json + adapter/.")
+                         "decoder-multischema/decoder-vision-multischema: REQUIRED, path to a "
+                         "training/train_decoder_lora_*.py output dir containing manifest.json + "
+                         "adapter/.")
     p.add_argument("--base-model", default=None,
-                    help="decoder-multischema only: override the base causal LM id instead of using "
-                         "the one recorded in the checkpoint's manifest.json (e.g. to point at a "
-                         "locally-cached copy of the same model).")
+                    help="decoder-multischema/decoder-vision-multischema only: override the base "
+                         "model id instead of using the one recorded in the checkpoint's "
+                         "manifest.json (e.g. to point at a locally-cached copy of the same model).")
     p.add_argument("--max-options", type=int, default=None,
-                    help="decoder-multischema[-mock] only: override the option-count cap used both "
-                         "to filter items before any backend is built and (for the real backend) to "
-                         "cross-check against the loaded checkpoint's own manifest['max_options']. "
-                         "Default: benchmarks.common.schema.DECODER_MULTISCHEMA_MAX_OPTIONS (26).")
+                    help="decoder-multischema[-mock]/decoder-vision-multischema[-mock] only: "
+                         "override the option-count cap used both to filter items before any "
+                         "backend is built and (for the real backends) to cross-check against the "
+                         "loaded checkpoint's own manifest['max_options']. Default: "
+                         "benchmarks.common.schema.DECODER_MULTISCHEMA_MAX_OPTIONS (26).")
+    p.add_argument("--max-pixels", type=int, default=None,
+                    help="decoder-vision-multischema only: AutoProcessor cap on image area, passed "
+                         "straight through to it. Default: the checkpoint manifest's own recorded "
+                         "max_pixels (PRD.md 5.2b: 256*28*28 caps any screenshot at 180 image "
+                         "tokens, the training-time default once vision rows are present).")
     p.add_argument("--decoder-apply-temperature", action="store_true",
-                    help="decoder-multischema only: apply the checkpoint manifest's fitted "
-                         "temperature instead of raw probabilities. Off by default -- PRD.md "
-                         "13a.2/13a.5 found this architecture's temperature-scaling procedure makes "
-                         "ECE/Brier worse, not better; 'use raw for now' is that section's own "
-                         "conclusion.")
+                    help="decoder-multischema/decoder-vision-multischema only: apply the checkpoint "
+                         "manifest's fitted temperature instead of raw probabilities. Off by "
+                         "default -- PRD.md 13a.2/13a.5 found this architecture's temperature-"
+                         "scaling procedure makes ECE/Brier worse, not better; 'use raw for now' is "
+                         "that section's own conclusion.")
     p.add_argument(
         "--selftest", action="store_true",
         help="run against benchmarks/<name>/fixtures/selftest.* (synthetic, authored in this repo) "
@@ -120,6 +164,7 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
 
 def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], dataset_provenance: dict) -> dict:
     multischema = args.backend in MULTISCHEMA_BACKENDS
+    is_vision_backend = args.backend in VISION_BACKENDS
     max_options = args.max_options or DECODER_MULTISCHEMA_MAX_OPTIONS
 
     if multischema:
@@ -148,11 +193,23 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
                     f"benchmarks.common.schema.FIXED_CHECKPOINT_LABELS={FIXED_CHECKPOINT_LABELS!r} used "
                     "to filter this run -- refusing to score against a schema mismatch."
                 )
+        n_with_image = 0
         for item in filt.supported:
+            image_path = item.image_path
+            if image_path is not None:
+                n_with_image += 1
+                if not is_vision_backend:
+                    # Not an error: a non-vision backend simply can't use the image, same as
+                    # `instructions` being unused by the fixed-schema backends. Still recorded
+                    # (n_with_image below) so a run against the wrong backend is visibly, not
+                    # silently, leaving information on the table.
+                    pass
             if multischema:
-                out = backend.predict_choice(item.state, item.options, instructions=item.instructions)
+                out = backend.predict_choice(
+                    item.state, item.options, instructions=item.instructions, image_path=image_path
+                )
             else:
-                out = backend.predict_choice(item.state, item.options)
+                out = backend.predict_choice(item.state, item.options, image_path=image_path)
             correct = out["choice"] == item.expected
             raw_rows.append({
                 "item_id": item.item_id,
@@ -166,6 +223,7 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
                 "confidence": out["confidence"],
                 "correct": correct,
                 "latency_ms": out.get("latency_ms"),
+                "image_path": image_path,
             })
             if multischema:
                 n = len(item.options)
@@ -179,6 +237,7 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
         model_info = {"instantiated": True, **backend.describe()}
         backend_name = backend.name
     else:
+        n_with_image = 0
         model_info = {
             "instantiated": False,
             "backend_requested": args.backend,
@@ -205,6 +264,7 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
         "n_items_considered": len(items),
         n_supported_key: len(filt.supported),
         "n_unsupported": len(filt.unsupported),
+        "n_supported_with_image": n_with_image,
         **report,
         "is_complete_benchmark_score": (
             not args.selftest and len(items) > 0 and len(filt.supported) == len(items)
@@ -213,10 +273,13 @@ def run_harness(*, benchmark: str, args: argparse.Namespace, items: list[Item], 
             (
                 f"{n_supported_key} is how many items a decoder/multischema model could "
                 f"legitimately attempt (a 'choice' item with between 2 and max_options={max_options} "
-                "options, whose gold label is one of them). is_complete_benchmark_score is true only "
-                "when every real (non-selftest) item was both supported and attempted. See PRD.md "
-                "Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a "
-                "benchmark ranking."
+                "options, whose gold label is one of them). n_supported_with_image is how many of "
+                "those items also carry a real screenshot (PRD.md 5.2b/13a.11) -- only "
+                "decoder-vision-multischema[-mock] backends actually use it; every other backend "
+                "here ignores an item's image the same way it ignores `instructions` if it doesn't "
+                "need it. is_complete_benchmark_score is true only when every real (non-selftest) "
+                "item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and "
+                "benchmarks/README.md before treating this file as a benchmark ranking."
             ) if multischema else (
                 "n_supported_by_fixed_schema is how many items this checkpoint could legitimately "
                 "attempt (a 'choice' item whose options are exactly the checkpoint's fixed 3-way "

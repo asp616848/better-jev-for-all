@@ -2,8 +2,8 @@
 Backends that can answer a `choice` request, all exposing the same interface
 (`describe()`, `predict_choice()`, plus either a fixed `labels` list or a
 `max_options` cap depending on which schema family they belong to) so
-benchmarks/jevbench/run.py and benchmarks/jabr_v2/run.py don't care which one
-they're pointed at.
+benchmarks/jevbench/run.py, benchmarks/jabr_v2/run.py, and
+benchmarks/screenspot_v2/run.py don't care which one they're pointed at.
 
 Fixed-schema family (PRD.md 13a.1/13a.3 -- the `ekvachan-base` encoder, one
 hardcoded 3-way head, `labels` is always exactly
@@ -36,14 +36,15 @@ LoRA decoder, restricted-logit read, answers ANY `choice` question with 2 to
 comes from):
 
 - DecoderMultischemaBackend: loads a LoRA adapter checkpoint produced by
-  `training/train_decoder_lora_wideschema.py` (or its `_multischema`
-  predecessor -- same manifest/adapter shape, smaller `max_options`) via
-  `peft.PeftModel` on top of the base causal LM named in the checkpoint's
-  manifest, and answers a `choice` question the same way that script's own
-  `evaluate()` does at inference time: read the next-token logits restricted
-  to the single-uppercase-letter tokens for this item's own option count,
-  softmax over just those, argmax for the answer. See its docstring below for
-  exactly which parts of that script's logic this mirrors and why.
+  `training/train_decoder_lora_wideschema.py` (or its `_multischema`/
+  `_benchcorpus`/`_general` (text-only data) predecessors -- same
+  manifest/adapter shape) via `peft.PeftModel` on top of the base causal LM
+  named in the checkpoint's manifest, and answers a `choice` question the
+  same way that script's own `evaluate()` does at inference time: read the
+  next-token logits restricted to the single-uppercase-letter tokens for this
+  item's own option count, softmax over just those, argmax for the answer.
+  See its docstring below for exactly which parts of that script's logic this
+  mirrors and why.
 - DecoderMultischemaMockBackend: the multischema-path equivalent of
   MockBackend -- a tiny, explicitly non-trained keyword-overlap heuristic
   that accepts any 2-to-`max_options`-option `choice` question, so the
@@ -51,13 +52,44 @@ comes from):
   be proven end to end with no torch/transformers/peft/checkpoint at all.
   Same "never mistaken for a real score" discipline as MockBackend.
 
-InProcessBackend and DecoderMultischemaBackend both import their ML stack
-lazily (inside __init__, not at module import time) specifically so that
-importing this file -- and therefore running either schema filter, which is
-the part that has to work everywhere -- never requires torch/transformers/
-peft to be installed. HTTPBackend never imports serve.inference at all, for
-the same reason: it only ever speaks HTTP, so it uses
-benchmarks.common.schema.FIXED_CHECKPOINT_LABELS.
+Decoder / vision-multischema family (PRD.md 5.2b, 13a.11 -- the same
+Qwen3.5-4B LoRA decoder, trained via `training/train_decoder_lora_general.py`
+on a mix of text and image rows, loaded through the vision-language model
+class instead of the causal-LM class so a `choice` item can carry a real
+screenshot):
+
+- DecoderVisionMultischemaBackend: the vision-capable sibling of
+  DecoderMultischemaBackend, not a rewrite of it. It reuses the exact same
+  restricted-logit mechanism (factored out below into
+  `_assert_single_token_letters()` and `_restricted_logit_result()`
+  specifically so this file never reimplements that mechanism a third time --
+  PRD.md 5.2b's own probe found "the restricted-logit read still works,
+  unchanged" once a vision-language forward pass is substituted for a
+  causal-LM one, and this backend is that finding turned into a benchmark
+  backend). What actually differs from DecoderMultischemaBackend, and why
+  each difference exists, is documented on the class itself.
+- DecoderVisionMultischemaMockBackend: the vision-path wiring self-test,
+  same non-trained-heuristic discipline as the two Mock backends above. It
+  accepts (and ignores) `image_path` -- a text keyword-overlap heuristic has
+  no way to look at an image, which is exactly why its accuracy proves
+  nothing about grounding ability and only ever proves the harness wiring
+  runs end to end without torch/transformers/peft/a checkpoint/a real
+  screenshot on disk.
+
+InProcessBackend, DecoderMultischemaBackend, and DecoderVisionMultischemaBackend
+all import their ML stack lazily (inside __init__, not at module import time)
+specifically so that importing this file -- and therefore running any schema
+filter, which is the part that has to work everywhere -- never requires
+torch/transformers/peft to be installed. HTTPBackend never imports
+serve.inference at all, for the same reason: it only ever speaks HTTP, so it
+uses benchmarks.common.schema.FIXED_CHECKPOINT_LABELS.
+
+Every `predict_choice()` below accepts an `image_path: str | None = None`
+keyword, for the same reason `instructions` is already accepted-but-unused by
+the fixed-schema backends: interface parity. Only DecoderVisionMultischemaBackend
+(and its mock) actually reads it; every other backend ignores it, since none
+of JevBench, jabr-v2, or the fixed/text-multischema checkpoints have ever seen
+an image.
 """
 
 from __future__ import annotations
@@ -77,7 +109,10 @@ class ChoiceBackend(Protocol):
     labels: list[str]
 
     def describe(self) -> dict: ...
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict: ...
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict: ...
     # Decoder/multischema backends below expose `max_options: int` instead of
     # `labels: list[str]` -- they don't have one fixed option set to name.
 
@@ -104,11 +139,14 @@ class InProcessBackend:
             "device": m.device,
         }
 
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
-        # instructions is accepted for interface parity with the multischema
-        # backends but unused here: the fixed 3-way classifier head never saw
-        # `options`/instructions text at train time (PRD.md 10a) -- it only
-        # ever reads `state`.
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        # instructions/image_path accepted for interface parity but unused
+        # here: the fixed 3-way classifier head never saw `options`/
+        # instructions/image text at train time (PRD.md 10a) -- it only ever
+        # reads `state`.
         t0 = time.perf_counter()
         result = dict(self._model.predict_choice(state, options))
         result["latency_ms"] = (time.perf_counter() - t0) * 1000.0
@@ -139,9 +177,12 @@ class HTTPBackend:
     def describe(self) -> dict:
         return {"backend": self.name, "endpoint": self.endpoint}
 
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
-        # instructions unused -- see InProcessBackend.predict_choice's comment;
-        # the wire contract this backend speaks doesn't carry it either.
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        # instructions/image_path unused -- see InProcessBackend.predict_choice's
+        # comment; the wire contract this backend speaks doesn't carry either.
         body = {"state": state, "questions": {"decision": {"type": "choice", "options": options}}}
         data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
@@ -179,7 +220,10 @@ class MockBackend:
                      "works end to end without torch, transformers, or a checkpoint on disk.",
         }
 
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
         if list(options) != self.labels:
             raise ValueError(f"MockBackend only answers {self.labels}, got {options}")
         t0 = time.perf_counter()
@@ -215,14 +259,18 @@ class MockBackend:
 
 
 def _build_multischema_prompt(state: str, options: list[str], letters: list[str], instructions: str | None) -> str:
-    """Same shape as `training/train_decoder_lora_wideschema.py`'s (and its
-    `_multischema` predecessor's) `build_prompt()`, specialized to the
-    identity ordering (letter i always names options[i]) since there is no
-    training-time position-bias concern at inference: the model was trained
-    on randomly-shuffled letter assignments specifically so it can't learn
-    "the answer is always A" as a shortcut, which is exactly what makes any
-    fixed presentation order -- including natural order, used here -- fine to
-    serve with."""
+    """Same shape as `training/train_decoder_lora_wideschema.py`'s (and
+    `training/decoder_lora_lib.py`'s `build_prompt_text()`'s) prompt text,
+    specialized to the identity ordering (letter i always names options[i])
+    since there is no training-time position-bias concern at inference: the
+    model was trained on randomly-shuffled letter assignments specifically so
+    it can't learn "the answer is always A" as a shortcut, which is exactly
+    what makes any fixed presentation order -- including natural order, used
+    here -- fine to serve with. Shared by both the text-only and vision
+    multischema backends below; the image block (if any) is layered on top of
+    this text by `_prompt_content()`, not baked into it, matching
+    `training/decoder_lora_lib.py`'s own split between `build_prompt_text()`
+    and `build_prompt_messages()`."""
     n = len(options)
     option_lines = "\n".join(f"{letters[i]}) {opt}" for i, opt in enumerate(options))
     instructions = instructions or "Choose the option that best answers the question below."
@@ -232,13 +280,78 @@ def _build_multischema_prompt(state: str, options: list[str], letters: list[str]
     )
 
 
+def _prompt_content(text: str, image_path: str | None):
+    """The one genuine generalization a vision-capable backend needs over the
+    text-only prompt shape: when `image_path` is set, chat `content` becomes
+    a list with an image block prepended -- exactly the shape PRD.md 5.2b's
+    probe verified end to end (`{"type": "image"}` renders to
+    `<|vision_start|><|image_pad|><|vision_end|>`, and the rest of the
+    rendered prompt is byte-identical to the text-only case). Mirrors
+    `training/decoder_lora_lib.py`'s `build_prompt_messages()`. When
+    `image_path` is None, content is the plain string every text-only backend
+    already used."""
+    if image_path is None:
+        return text
+    return [{"type": "image"}, {"type": "text", "text": text}]
+
+
+def _assert_single_token_letters(tokenizer, letters: list[str], base_model_name: str) -> list[int]:
+    """Shared by DecoderMultischemaBackend and DecoderVisionMultischemaBackend
+    -- the same runtime check both scripts' own `assert_letter_tokens()`
+    (training/decoder_lora_lib.py) makes at training time, re-verified here
+    rather than trusted from the manifest: refuse to silently misread a
+    letter position if this checkpoint's tokenizer doesn't tokenize
+    A..<n-th letter> as single, mutually distinct tokens. Factored out once
+    so neither backend below reimplements it -- this is the second of the two
+    genuinely shared pieces of the restricted-logit mechanism, alongside
+    `_restricted_logit_result()`."""
+    letter_ids: list[int] = []
+    for letter in letters:
+        ids = tokenizer.encode(letter, add_special_tokens=False)
+        if len(ids) != 1:
+            raise RuntimeError(
+                f"letter {letter!r} is not a single token under {base_model_name}'s tokenizer: {ids} "
+                "-- this checkpoint's restricted-logit mechanism assumes exactly one token per letter."
+            )
+        letter_ids.append(ids[0])
+    if len(set(letter_ids)) != len(letter_ids):
+        raise RuntimeError(f"letter token ids are not mutually distinct: {letter_ids}")
+    return letter_ids
+
+
+def _restricted_logit_result(last_logits, letter_ids_n, options: list[str], temperature: float, torch) -> dict:
+    """The one mechanism DecoderMultischemaBackend and
+    DecoderVisionMultischemaBackend share verbatim, factored out so this file
+    never reimplements it a third time: restrict the last token's logits to
+    this item's own `n = len(options)` letter-token ids, softmax, argmax.
+    PRD.md 5.2b's probe found this step needs *no* change at all when the
+    forward pass comes from a vision-language model instead of a causal-LM
+    one -- "the restricted-logit read still works, unchanged" is that
+    section's own conclusion, and this function is what makes that true in
+    code rather than just in prose (both backends call the exact same
+    function on their own last-token logits). See
+    DecoderMultischemaBackend's class docstring for the full derivation of
+    why this is mathematically identical to the training-time
+    mask-to-`-inf`-then-softmax-over-`MAX_OPTIONS` approach."""
+    restricted = last_logits[letter_ids_n] / temperature
+    probs_t = torch.softmax(restricted, dim=-1).cpu().numpy()
+    probabilities = {opt: float(p) for opt, p in zip(options, probs_t)}
+    best_idx = int(probs_t.argmax())
+    return {
+        "choice": options[best_idx],
+        "probabilities": probabilities,
+        "confidence": float(probs_t[best_idx]),
+    }
+
+
 class DecoderMultischemaBackend:
     """Runs a LoRA-adapter checkpoint produced by
-    `training/train_decoder_lora_wideschema.py` (or its `_multischema`
-    predecessor -- both save the same `<checkpoint_dir>/manifest.json` +
-    `<checkpoint_dir>/adapter/` shape, just with a different `max_options` in
-    the manifest) in this process, and answers a `choice` question the way
-    that script's own `evaluate()` does at inference time:
+    `training/train_decoder_lora_wideschema.py` (or its `_multischema`/
+    `_benchcorpus`/`_general` (text-only) predecessors -- all save the same
+    `<checkpoint_dir>/manifest.json` + `<checkpoint_dir>/adapter/` shape,
+    just with a different `max_options` in the manifest) in this process, and
+    answers a `choice` question the way that script's own `evaluate()` does
+    at inference time:
 
       1. Build a prompt listing this item's own options as A), B), C), ...
          (see `_build_multischema_prompt` above) and apply the base model's
@@ -254,6 +367,8 @@ class DecoderMultischemaBackend:
          already-restricted-to-n vector is mathematically identical to the
          training script's mask-to-`-inf`-then-softmax-over-`MAX_OPTIONS`
          approach, since a softmax is invariant to dropping `-inf` terms).
+         This step is `_restricted_logit_result()` above, shared with
+         DecoderVisionMultischemaBackend.
       4. Softmax (optionally after dividing by a fitted temperature -- see
          `apply_temperature` below), argmax for the answer.
 
@@ -317,23 +432,7 @@ class DecoderMultischemaBackend:
         self.model.to(self.device)
         self.model.eval()
 
-        # Same runtime check train_decoder_lora_wideschema.py's main() makes,
-        # re-verified here rather than trusted from the manifest: refuse to
-        # silently misread a letter position if this checkpoint's tokenizer
-        # doesn't tokenize A..<max_options-th letter> as single, mutually
-        # distinct tokens.
-        letter_ids: list[int] = []
-        for letter in self.letters:
-            ids = self.tokenizer.encode(letter, add_special_tokens=False)
-            if len(ids) != 1:
-                raise RuntimeError(
-                    f"letter {letter!r} is not a single token under {base_model_name}'s tokenizer: {ids} "
-                    "-- this checkpoint's restricted-logit mechanism assumes exactly one token per letter."
-                )
-            letter_ids.append(ids[0])
-        if len(set(letter_ids)) != len(letter_ids):
-            raise RuntimeError(f"letter token ids are not mutually distinct: {letter_ids}")
-        self._letter_ids = letter_ids
+        self._letter_ids = _assert_single_token_letters(self.tokenizer, self.letters, base_model_name)
 
     def describe(self) -> dict:
         return {
@@ -352,7 +451,15 @@ class DecoderMultischemaBackend:
             "device": self.device,
         }
 
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        # image_path accepted for interface parity, unused: this checkpoint
+        # was trained (train_decoder_lora_wideschema.py and its text-only
+        # predecessors) with AutoTokenizer/AutoModelForCausalLM, which never
+        # saw an image -- see DecoderVisionMultischemaBackend for the arm
+        # that does.
         n = len(options)
         if not (2 <= n <= self.max_options):
             raise ValueError(
@@ -374,17 +481,9 @@ class DecoderMultischemaBackend:
             out = self.model(**enc)
         last_logits = out.logits[0, -1, :].float()  # unpadded single sequence -- last column is the last real token
         letter_ids_n = torch.tensor(self._letter_ids[:n], device=last_logits.device)
-        restricted = last_logits[letter_ids_n] / self.temperature
-        probs_t = torch.softmax(restricted, dim=-1).cpu().numpy()
-
-        probabilities = {opt: float(p) for opt, p in zip(options, probs_t)}
-        best_idx = int(probs_t.argmax())
-        return {
-            "choice": options[best_idx],
-            "probabilities": probabilities,
-            "confidence": float(probs_t[best_idx]),
-            "latency_ms": (time.perf_counter() - t0) * 1000.0,
-        }
+        result = _restricted_logit_result(last_logits, letter_ids_n, options, self.temperature, torch)
+        result["latency_ms"] = (time.perf_counter() - t0) * 1000.0
+        return result
 
 
 class DecoderMultischemaMockBackend:
@@ -413,7 +512,13 @@ class DecoderMultischemaMockBackend:
                     "disk.",
         }
 
-    def predict_choice(self, state: str, options: list[str], instructions: str | None = None) -> dict:
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        # image_path accepted for interface parity, unused -- see
+        # DecoderVisionMultischemaMockBackend for the mock that at least
+        # acknowledges an image was passed (it still can't look at it).
         n = len(options)
         if not (2 <= n <= self.max_options):
             raise ValueError(f"DecoderMultischemaMockBackend supports 2-{self.max_options} options, got {n}")
@@ -433,6 +538,279 @@ class DecoderMultischemaMockBackend:
         # +0.05 floor keeps every option's probability strictly positive) --
         # meaningful enough evidence-bundle output to exercise Brier/ECE
         # without pretending this heuristic is a real confidence estimate.
+        floored = [s + 0.05 for s in scores]
+        z = sum(floored)
+        probabilities = {opt: v / z for opt, v in zip(options, floored)}
+        return {
+            "choice": options[best_idx],
+            "probabilities": probabilities,
+            "confidence": probabilities[options[best_idx]],
+            "latency_ms": (time.perf_counter() - t0) * 1000.0,
+        }
+
+
+class DecoderVisionMultischemaBackend:
+    """The vision-capable sibling of DecoderMultischemaBackend (PRD.md 5.2b,
+    13a.11), not a rewrite of it -- deliberately structured as a sibling class
+    rather than a subclass, for one concrete reason: the two classes'
+    __init__ methods load genuinely different HF classes for genuinely
+    different reasons (AutoTokenizer/AutoModelForCausalLM vs.
+    AutoProcessor/AutoModelForImageTextToText -- PRD.md 5.2b's probe found
+    the causal-LM class silently has zero vision-tower parameters under this
+    base model, so there is no "just add an optional image path" shortcut
+    available on top of the existing class), and forcing that into one
+    __init__ with branching would be harder to read than two short, separate
+    ones. What both classes share -- the restricted-logit mechanism itself --
+    is factored out above into `_assert_single_token_letters()` and
+    `_restricted_logit_result()` precisely so it is not reimplemented here a
+    third time. That is the concrete meaning of "sibling, not reinvented":
+    the ~15 lines every decoder-family backend needs are shared functions;
+    the ~30 lines that must differ (tokenizer-vs-processor, model class,
+    pixel_values passthrough) are not artificially forced to look identical.
+
+    What genuinely differs from DecoderMultischemaBackend, matching PRD.md
+    5.2b's own probe findings one for one:
+
+      1. **`AutoProcessor`, not `AutoTokenizer`.** A bare tokenizer leaves a
+         single `<|image_pad|>` placeholder in the prompt and emits no
+         pixels; the processor is what expands it to the real per-image
+         token count and returns `pixel_values`/`image_grid_thw`. A text-only
+         item (`image_path=None`) through the same processor behaves
+         identically to a bare tokenizer (verified in
+         `training/probe_vision_path.py`), so this class still answers a
+         text-only `choice` item correctly -- it just never needs to, since
+         DecoderMultischemaBackend already exists for that path and this
+         class's own checkpoint was trained with vision rows in the mix
+         specifically to be run against real screenshots.
+      2. **`AutoModelForImageTextToText`, not `AutoModelForCausalLM`.** For
+         this base model, `AutoModelForCausalLM` maps to a class with *zero*
+         `visual` parameters -- it silently discards the vision tower even if
+         you hand it an image. `AutoModelForImageTextToText` maps to the real
+         `Qwen3_5ForConditionalGeneration` class, the one
+         `training/train_decoder_lora_general.py` actually trains against.
+      3. **A real PIL image is opened and passed to the processor** whenever
+         `image_path` is set, using the exact chat-template content shape
+         (`[{"type": "image"}, {"type": "text", "text": ...}]`) PRD.md 5.2b
+         verified renders to `<|vision_start|><|image_pad|><|vision_end|>`
+         with the rest of the prompt byte-identical to the text-only case --
+         see `_prompt_content()` above.
+      4. **The vision-tower-freeze assertion.** PRD.md 5.2b found the
+         existing LoRA `target_modules` freeze the vision tower by *name
+         mismatch* (the ViT blocks use `attn.qkv`/`mlp.linear_fc{1,2}`, which
+         match nothing in `target_modules`) rather than by an explicit
+         freeze -- worth making deliberate rather than trusting it silently.
+         Re-checked here at load time, the same discipline
+         `_assert_single_token_letters()` already applies to the letter-token
+         mechanism: don't trust the manifest's claim that this holds, verify
+         it against the actually-loaded model.
+      5. **`max_pixels`**, read from the checkpoint's manifest by default (or
+         overridden by `--max-pixels`) and passed to `AutoProcessor` -- PRD.md
+         5.2b: "the image processor ships effectively uncapped... this is the
+         failure mode most likely to waste a night of GPU time," except here
+         at *inference* time an uncapped image just costs more tokens/latency
+         rather than truncating a training batch, since this backend's own
+         `make_collate`-equivalent (the plain `self.processor(...)` call
+         below) never truncates and there is no fixed batch `max_length` to
+         violate at inference time the way there is at training time.
+
+    Everything else -- the restricted-logit read itself, the raw-by-default
+    calibration stance (13a.2/13a.5's finding was about the mechanism, not
+    about whether an image was involved), the letter-token single-token
+    assertion -- is identical to DecoderMultischemaBackend's, by construction
+    (shared functions, not shared prose).
+
+    Requires torch/transformers/peft/pillow (and, transitively,
+    torchvision -- PRD.md 5.2b: "transformers 5.17.0 makes torchvision a hard
+    dependency of any image processor") and a real vision-trained checkpoint
+    on disk -- all imported lazily in __init__, same reasoning as
+    DecoderMultischemaBackend's."""
+
+    name = "decoder_vision_multischema"
+
+    def __init__(
+        self,
+        checkpoint_dir: Path,
+        base_model: str | None = None,
+        device: str | None = None,
+        apply_temperature: bool = False,
+        max_pixels: int | None = None,
+    ):
+        manifest_path = checkpoint_dir / "manifest.json"
+        adapter_dir = checkpoint_dir / "adapter"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"no manifest at {manifest_path}")
+        if not adapter_dir.exists():
+            raise FileNotFoundError(f"no adapter dir at {adapter_dir}")
+
+        import torch
+        from peft import PeftModel
+        from PIL import Image
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        self._Image = Image
+        self.manifest = json.loads(manifest_path.read_text())
+        self.checkpoint_name = checkpoint_dir.name
+        self.max_options = int(self.manifest.get("max_options", DECODER_MULTISCHEMA_MAX_OPTIONS))
+        self.letters = [chr(ord("A") + i) for i in range(self.max_options)]
+        self.apply_temperature = apply_temperature
+        self.temperature = float(self.manifest.get("temperature", 1.0)) if apply_temperature else 1.0
+        # PRD.md 5.2b: 256*28*28 caps any screenshot at 180 image tokens --
+        # the training-time default when vision rows are present. Fall back
+        # to the manifest's recorded value (train_decoder_lora_general.py
+        # writes `max_pixels` into it) rather than re-guessing it, unless the
+        # caller overrides explicitly.
+        self.max_pixels = max_pixels or self.manifest.get("max_pixels")
+
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._torch = torch
+        base_model_name = base_model or self.manifest["base_model"]
+        self.base_model_name = base_model_name
+
+        processor_kwargs = {"max_pixels": self.max_pixels} if self.max_pixels else {}
+        self.processor = AutoProcessor.from_pretrained(adapter_dir, **processor_kwargs)
+        if self.processor.tokenizer.pad_token is None:
+            self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
+
+        base = AutoModelForImageTextToText.from_pretrained(base_model_name, dtype=torch.bfloat16)
+        self.model = PeftModel.from_pretrained(base, adapter_dir)
+        self.model.to(self.device)
+        self.model.eval()
+
+        self._letter_ids = _assert_single_token_letters(self.processor.tokenizer, self.letters, base_model_name)
+
+        # PRD.md 5.2b / training/decoder_lora_lib.assert_vision_tower_frozen():
+        # the vision tower is frozen by target_modules name-mismatch, not by
+        # an explicit freeze. Re-verify against the actually-loaded model
+        # rather than trust the manifest's claim that the checkpoint this
+        # training run produced has that property.
+        lora_mods = [n for n, _ in self.model.named_modules() if n.endswith("lora_A")]
+        in_vision = [n for n in lora_mods if "visual" in n]
+        if in_vision:
+            raise RuntimeError(
+                f"{len(in_vision)} LoRA module(s) landed in the vision tower, which PRD.md 5.2b's "
+                f"probe found should be structurally impossible with this project's target_modules: "
+                f"{in_vision[:5]}"
+            )
+        self._n_lora_modules = len(lora_mods)
+
+    def describe(self) -> dict:
+        return {
+            "backend": self.name,
+            "checkpoint_name": self.checkpoint_name,
+            "base_model": self.base_model_name,
+            "architecture": self.manifest.get("architecture"),
+            "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+            "max_options": self.max_options,
+            "max_pixels": self.max_pixels,
+            "n_lora_modules": self._n_lora_modules,
+            "vision_tower_frozen": True,  # would have raised in __init__ otherwise
+            "temperature_applied": self.apply_temperature,
+            "temperature": self.temperature if self.apply_temperature else None,
+            "calibration_note": (
+                "raw (uncalibrated) probabilities by default -- PRD.md 13a.2/13a.5 found temperature "
+                "scaling makes this architecture's ECE/Brier worse, not better (finding is about the "
+                "mechanism, predates vision); pass apply_temperature=True / "
+                "--decoder-apply-temperature to override"
+            ),
+            "device": self.device,
+        }
+
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        n = len(options)
+        if not (2 <= n <= self.max_options):
+            raise ValueError(
+                f"DecoderVisionMultischemaBackend supports 2-{self.max_options} options (this "
+                f"checkpoint's manifest max_options={self.max_options}), got {n}"
+            )
+        torch = self._torch
+        t0 = time.perf_counter()
+
+        prompt_text = _build_multischema_prompt(state, options, self.letters, instructions)
+        content = _prompt_content(prompt_text, image_path)
+        messages = [{"role": "user", "content": content}]
+        prompt = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+        )
+
+        images = None
+        if image_path is not None:
+            images = [self._Image.open(image_path).convert("RGB")]
+
+        enc = self.processor(text=[prompt], images=images, return_tensors="pt")
+        enc = {k: v.to(self.device) for k, v in enc.items()}
+
+        with torch.no_grad():
+            out = self.model(**enc)
+        last_logits = out.logits[0, -1, :].float()  # unpadded single sequence -- last column is the last real token
+        letter_ids_n = torch.tensor(self._letter_ids[:n], device=last_logits.device)
+        result = _restricted_logit_result(last_logits, letter_ids_n, options, self.temperature, torch)
+        result["latency_ms"] = (time.perf_counter() - t0) * 1000.0
+        return result
+
+
+class DecoderVisionMultischemaMockBackend:
+    """The vision-path wiring self-test, same non-trained-heuristic
+    discipline as DecoderMultischemaMockBackend above -- and, like it, exists
+    purely so benchmarks/screenspot_v2's harness wiring (filter -> call ->
+    score -> evidence bundle, including real image-path resolution and
+    hash-verification in the loader) can be proven end to end with no torch,
+    transformers, peft, or checkpoint on disk.
+
+    **It never looks at the image.** A keyword-overlap heuristic over
+    `state`/`options` text has no mechanism to read pixels; `image_path` is
+    accepted (matching the real backend's signature so the harness never
+    branches on which backend it's holding) and used only to confirm the
+    referenced file exists, which is enough to prove the loader handed the
+    backend a real, resolvable path without pretending grounding accuracy
+    can be evaluated by a heuristic that is, by construction, blind. Its
+    accuracy is exactly as meaningless as DecoderMultischemaMockBackend's --
+    arguably more so, since real ScreenSpot-v2 options are position/size
+    descriptors with essentially no exploitable text overlap with the
+    instruction, which is the point (see benchmarks/screenspot_v2/README.md)."""
+
+    name = "decoder_vision_multischema_mock"
+
+    def __init__(self, max_options: int = DECODER_MULTISCHEMA_MAX_OPTIONS):
+        self.max_options = max_options
+
+    def describe(self) -> dict:
+        return {
+            "backend": self.name,
+            "max_options": self.max_options,
+            "note": "NOT a trained model -- a deterministic keyword-overlap heuristic that never "
+                    "looks at the image (it has no mechanism to). Used only to prove the vision "
+                    "multischema harness pipeline (filter -> call -> score -> evidence bundle, "
+                    "including real image-path resolution) works end to end without torch, "
+                    "transformers, peft, or a checkpoint on disk.",
+        }
+
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        n = len(options)
+        if not (2 <= n <= self.max_options):
+            raise ValueError(f"DecoderVisionMultischemaMockBackend supports 2-{self.max_options} options, got {n}")
+        if image_path is not None and not Path(image_path).exists():
+            raise FileNotFoundError(
+                f"image_path {image_path!r} does not exist -- the loader should never hand this "
+                "backend an unresolved path (see benchmarks/screenspot_v2/loader.py)."
+            )
+        t0 = time.perf_counter()
+
+        context = f"{instructions or ''} {state}".lower()
+        context_words = set(w.strip(".,:;!?()\"'") for w in context.split())
+
+        scores = []
+        for opt in options:
+            opt_words = [w.strip(".,:;!?()\"'") for w in opt.lower().split() if len(w.strip(".,:;!?()\"'")) > 2]
+            overlap = sum(1 for w in opt_words if w in context_words)
+            scores.append(overlap / max(len(opt_words), 1))
+
+        best_idx = max(range(n), key=lambda i: (scores[i], -i))
         floored = [s + 0.05 for s in scores]
         z = sum(floored)
         probabilities = {opt: v / z for opt, v in zip(options, floored)}
