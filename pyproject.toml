@@ -18,6 +18,12 @@ dependencies = [
     "huggingface-hub>=0.25",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    # ViZDoom episodic benchmark (PRD 8.1/8.1d): installs from a prebuilt manylinux wheel under
+    # this repo's own (>=3.11) uv-managed Python -- the system python3 on the training server is
+    # 3.6.15 and silently falls back to a broken CMake source build if used instead (verified
+    # 2026-09-24, see PRD.md 8.1d Finding 1). MIT license, bundles GPL-descended ZDoom + BSD
+    # Freedoom assets -- consumed as an ordinary dependency, never forked (PRD.md 7.4).
+    "vizdoom>=1.3.1",
 ]
 
 [tool.uv]

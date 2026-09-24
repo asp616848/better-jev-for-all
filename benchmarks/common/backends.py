@@ -90,11 +90,27 @@ the fixed-schema backends: interface parity. Only DecoderVisionMultischemaBacken
 (and its mock) actually reads it; every other backend ignores it, since none
 of JevBench, jabr-v2, or the fixed/text-multischema checkpoints have ever seen
 an image.
+
+Random baseline (PRD.md 8.1d Finding 2 -- added for the ViZDoom episodic
+harness, but deliberately general rather than ViZDoom-specific, since "what
+does a policy with no intelligence at all score" is a control every choice
+benchmark here benefits from being able to run, not just ViZDoom):
+
+- RandomChoiceBackend: answers any `choice` question (any option count,
+  including a fixed 3-way schema) by drawing uniformly from the options it
+  was actually offered, seeded with `random.Random(seed)`. Unlike the Mock
+  backends above, this is not a wiring self-test -- it is a real, meaningful,
+  publishable baseline in its own right (PRD.md 8.1d Finding 2's "a uniform
+  random policy's survival time beats Von's own published number" finding
+  depends on exactly this backend existing and being run for real, not
+  mocked). `describe()` still flags it plainly as "NOT a trained model" so it
+  is never mistaken for one downstream.
 """
 
 from __future__ import annotations
 
 import json
+import random
 import time
 import urllib.error
 import urllib.request
@@ -254,6 +270,47 @@ class MockBackend:
             "choice": label,
             "probabilities": probs,
             "confidence": conf,
+            "latency_ms": (time.perf_counter() - t0) * 1000.0,
+        }
+
+
+class RandomChoiceBackend:
+    """Uniform-random baseline -- see the module docstring's "Random
+    baseline" section for why this exists and is not merely a wiring
+    self-test. Works with any option count (it does not belong to either the
+    fixed-schema or the decoder/multischema family; it never checks `options`
+    against a fixed list at all), which is exactly what makes it usable
+    across every harness in this repo, not just the episodic ViZDoom one it
+    was added for."""
+
+    name = "random"
+
+    def __init__(self, seed: int = 0):
+        self._rng = random.Random(seed)
+        self.seed = seed
+
+    def describe(self) -> dict:
+        return {
+            "backend": self.name,
+            "seed": self.seed,
+            "note": "NOT a trained model -- a uniform-random baseline over whatever options an "
+                    "item/decision actually offers. A real, publishable control (PRD.md 8.1d "
+                    "Finding 2), not a wiring self-test like the Mock backends.",
+        }
+
+    def predict_choice(
+        self, state: str, options: list[str], instructions: str | None = None,
+        image_path: str | None = None,
+    ) -> dict:
+        t0 = time.perf_counter()
+        n = len(options)
+        choice = self._rng.choice(options)
+        p = 1.0 / n
+        probabilities = {opt: p for opt in options}
+        return {
+            "choice": choice,
+            "probabilities": probabilities,
+            "confidence": p,
             "latency_ms": (time.perf_counter() - t0) * 1000.0,
         }
 

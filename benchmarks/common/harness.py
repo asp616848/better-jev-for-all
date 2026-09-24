@@ -60,6 +60,8 @@ def build_backend(args: argparse.Namespace):
         return backends.HTTPBackend(args.http_endpoint)
     if args.backend == "mock":
         return backends.MockBackend()
+    if args.backend == "random":
+        return backends.RandomChoiceBackend(seed=args.seed)
     if args.backend == "decoder-multischema":
         if not args.checkpoint_dir:
             raise ValueError(
@@ -101,7 +103,7 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
     p.add_argument(
         "--backend",
         choices=[
-            "in_process", "http", "mock",
+            "in_process", "http", "mock", "random",
             "decoder-multischema", "decoder-multischema-mock",
             "decoder-vision-multischema", "decoder-vision-multischema-mock",
         ],
@@ -110,7 +112,9 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
              "transformers and a real fixed-schema checkpoint on disk); http calls a running "
              "serve/server.py over the wire (needs no local ML stack, but a server must already be "
              "up); mock is a non-trained fixed-schema wiring self-test, only meaningful together "
-             "with --selftest. decoder-multischema loads a text-only LoRA adapter checkpoint from "
+             "with --selftest. random is a uniform-random baseline over whatever options are "
+             "offered -- unlike mock, a real publishable control (PRD.md 8.1d Finding 2), seeded by "
+             "--seed. decoder-multischema loads a text-only LoRA adapter checkpoint from "
              "train_decoder_lora_wideschema.py/_benchcorpus.py/_general.py (needs torch/transformers/"
              "peft and --checkpoint-dir pointing at one -- see PRD.md 13a.5); "
              "decoder-multischema-mock is that path's non-trained wiring self-test. "
