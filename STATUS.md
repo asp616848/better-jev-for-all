@@ -4,7 +4,7 @@ Living task list for `better-jev-for-all` (the model/serving/benchmark-harness r
 
 Sibling project: **better-jev-bench** (separate repo, separate PRD, own `STATUS.md`) — a standalone dataset/benchmark corpus. Don't mix work across the two repos in one commit.
 
-Last verified: 2026-09-24 (**ViZDoom design pass — PRD 8.1d**. Planning only: no harness code written, GPU untouched, 13a.11's vision run in progress throughout. ViZDoom verified installable and runnable headless on this server; Von's own ViZDoom harness fetched and read, so the text-vs-vision question is answered from its code rather than guessed; two honest findings about Von's published numbers recorded. See "ViZDoom" below). Prior: 2026-09-24 (ScreenSpot-v2 benchmark harness built + validated, PRD 13a.12 — CPU-only session, GPU untouched, vision training run in progress throughout). Prior: 2026-09-24 vision-tier planning pass — PRD 5.2b, `results/vision-path-probe-20260923T201758Z.manifest.json`; 2026-09-23 independent review pass — see "Review log" at the bottom.
+Last verified: 2026-09-24 (**ViZDoom harness built and validated end to end — PRD 13a.13**. CPU-only session, GPU untouched, 13a.11's vision run in progress throughout. `benchmarks/vizdoom/` + `benchmarks/common/episodic.py`, validated against the real headless ViZDoom engine with rubric-oracle/random/mock policies; real numbers recorded, including a real, honest surprise (the oracle baseline scores above Von's own published 9.00 kills). Real text-arm run against a trained checkpoint is the one remaining step — see "ViZDoom" below). Prior: 2026-09-24 (**ViZDoom design pass — PRD 8.1d**. Planning only, before the build above. ViZDoom verified installable and runnable headless on this server; Von's own ViZDoom harness fetched and read; two honest findings about Von's published numbers recorded). Prior: 2026-09-24 (ScreenSpot-v2 benchmark harness built + validated, PRD 13a.12 — CPU-only session, GPU untouched, vision training run in progress throughout). Prior: 2026-09-24 vision-tier planning pass — PRD 5.2b, `results/vision-path-probe-20260923T201758Z.manifest.json`; 2026-09-23 independent review pass — see "Review log" at the bottom.
 
 ## Done
 
@@ -21,6 +21,7 @@ Last verified: 2026-09-24 (**ViZDoom design pass — PRD 8.1d**. Planning only: 
 - [x] **README.md rewritten** (2026-09-23 review) — now states the decoder-primary decision, the real 13a.2/13a.6/13a.7 numbers, the `is_complete_benchmark_score: false` caveat and what the unattempted remainder actually is, and the serving-layer gap. It previously claimed the decoder was still training and that no competitive benchmark had been run.
 - [x] **`skills/ekvachan-setup/SKILL.md` corrected** (2026-09-23 review) — its dated status note was already current (the prior entry claiming it was stale was wrong); the genuinely stale line was its capability list, which still said benchmark suites and evidence bundles "don't exist". Fixed.
 - [x] **ScreenSpot-v2 benchmark harness built and validated end to end** (2026-09-24, CPU-only, PRD 13a.12) — `benchmarks/screenspot_v2/` (`loader.py`/`run.py`/`README.md`/`NOTICE.md`/`fixtures/`/`vendored/`), the vision analogue of JevBench/jabr-v2, per PRD 5.2b's design. **858 real items** (not the upstream manifest's headline 898 — see 13a.12), vendored via `better-jev-bench`'s `bjb export --slice heldout`, reframed from ScreenSpot-v2's own binary grounding format into genuine **N-way (2-6 option) grounding-as-choice items**, 0 excluded for too-small a candidate pool. `benchmarks/common/backends.py` gained `DecoderVisionMultischemaBackend`/`-Mock` (vision-capable sibling of `DecoderMultischemaBackend`, sharing its restricted-logit mechanism via two factored-out helper functions rather than reimplementing it); `Item` gained an optional `image_path` field. Validated with the mock backend against the real 858-item dataset (real image sha256 re-verification against better-jev-bench's cache, 858/858 filtered as supported) and against the synthetic self-test fixture (exercises the pool-too-small exclusion path for real, since real data never triggers it) — both produced committed manifests in `results/`. JevBench/jabr-v2's own mock/selftest runs re-verified unaffected (139/231, 387/944 unchanged) after the shared-file changes this required. **Not yet run for real** — `checkpoints/ekvachan-decoder-qwen-vision` (PRD 13a.11) was still training throughout this work, and this session was explicitly scoped to never touch the GPU. See 13a.12 for the exact one-line command to run once it lands.
+- [x] **ViZDoom episodic harness built and validated end to end against the real engine** (2026-09-24, CPU-only, PRD 13a.13) — `benchmarks/vizdoom/` (`env.py`/`observe.py`/`rubric.py`/`run.py`/`README.md`/`NOTICE.md`/`vendored/LICENSE`) plus the new shared `benchmarks/common/episodic.py::run_episodic_harness()` (the closed-loop counterpart to `run_harness()` — ViZDoom has no gold label and a model-generated item sequence, unlike the three static benchmarks). Validated against the real headless ViZDoom engine (not mocked): the rubric-oracle policy scores **11.125 kills / 19.71s survival** (vs. Von's published 9.00/12.11 — a real, honest surprise, caveated in 13a.13/README), the random-policy baseline reproduces the 8.1d planning pass's own probe (**1.275 kills / 14.65s** vs. the probe's 1.53/14.09), and the `decoder-multischema-mock` wiring self-test runs clean on both scenarios and both rubric conditions. `benchmarks/common/backends.py` gained one new, deliberately general backend, `RandomChoiceBackend` (`--backend random`) — a real publishable control, not a wiring self-test. DAgger-teacher data emission (PRD 5.3b / 8.1d Finding 4) is wired and validated (90 real `(text, frame, action)` triples produced in this session), pulled forward from its original "after the vision arm" sequencing since it was nearly free once the episodic loop existed. JevBench/jabr-v2/ScreenSpot-v2's own mock/selftest runs re-verified unaffected (139/231, 387/944, 858/858 unchanged) after the shared-file changes this required. **Not yet run for real** — this session was explicitly scoped to never touch the GPU. See 13a.13 for the exact command to run once the GPU is free.
 
 ## In progress / needs fixing
 
@@ -58,14 +59,17 @@ Last verified: 2026-09-24 (**ViZDoom design pass — PRD 8.1d**. Planning only: 
 - [ ] *(blocked on the sibling repo)* **Multimodal data comes from better-jev-bench, not from here** — see its PRD §13 and `STATUS.md`. This repo needs `bjb export` to emit image-bearing records; it should not grow a second, parallel data pipeline. **Exception**: §5.3b's DAgger on-policy harness data (ViZDoom / `tsai-sc` / `jev-ultrafast`) stays here, after the static slate, alongside the game-harness work it depends on.
 - [ ] Conformal prediction calibration upgrade (PRD 5.3a)
 - [x] **Decoder calibration anomaly resolved** (2026-09-23, PRD 13a.9) — it was never a bug. An oracle temperature sweep on real eval data confirms T=1.0 (raw) is already the global-optimum ECE/Brier; the "logit surrogate" hypothesis in 13a.2 doesn't hold up (the math is provably exact except for a negligible clipping artifact). The earlier fitted temperatures (0.86-1.15) were small-calibration-sample noise pulling a 1-D fit slightly off the true optimum, confirmed by refitting on a 3.3x larger pool and watching it move closer to 1.0. No code change needed — `DecoderMultischemaBackend`'s existing raw-by-default was already correct, now for a verified reason.
-- [ ] DAgger data collection method for the game/computer-use slice (PRD 5.3b). **The teacher is now identified (PRD 8.1d Finding 4): Von's ViZDoom rubric is a deterministic function of the game snapshot, so it is a zero-cost programmatic teacher, and because both ViZDoom arms share one environment loop a text-arm rollout emits on-policy `(text, frame, teacher-action)` triples for the vision arm for free.** Sequenced as 8.1d checklist item 9.
-- [ ] Game/computer-use harnesses: **ViZDoom — design resolved 2026-09-24 (PRD 8.1d), zero code; follow 8.1d's checklist, do not re-derive the design.** StarCraft (`tsai-sc`), browser-use/jev-ultrafast (PRD 8.1) — no design, zero code
+- [x] **DAgger data collection method for the game/computer-use slice (PRD 5.3b) — wired and validated 2026-09-24 (PRD 13a.13), pulled forward from its original "step 9, optional, after the vision arm" sequencing.** `benchmarks/common/episodic.py::DaggerSink` emits real on-policy `(text, frame, teacher_action, model_action)` triples (90 rows + 90 PNGs produced in this session's own validation run). Nothing consumes it yet — that's the vision-arm trainer, still not started.
+- [ ] Game/computer-use harnesses: **ViZDoom — harness built and validated 2026-09-24 (PRD 13a.13); only the real run against a trained checkpoint remains (one command, see 13a.13/`benchmarks/vizdoom/README.md`).** StarCraft (`tsai-sc`), browser-use/jev-ultrafast (PRD 8.1) — no design, zero code
 - [ ] Cascade serving architecture, nano→base escalation (PRD 4.1 G5)
 
-## ViZDoom — design resolved 2026-09-24 (PRD 8.1d), no code written
+## ViZDoom — harness built and validated 2026-09-24 (PRD 8.1d design, 13a.13 build)
 
-A planning pass. **No harness code, no GPU, no `training/` file touched.** What landed is PRD
-8.1d. Read it before writing any of this; the checklist below is 8.1d's, in checkbox form.
+Design resolved in PRD 8.1d (a planning pass); **the harness itself was then built in a second
+CPU-only session the same day** — `benchmarks/vizdoom/` + `benchmarks/common/episodic.py`, no GPU
+touched, no `training/` lineage file touched. Read PRD 13a.13 for the full build record
+(real numbers, the honest oracle-beats-Von surprise, the DAgger emission). The checklist below is
+8.1d's own, in checkbox form, now showing real completion status.
 
 **Verified for real on this server (CPU only), not assumed:**
 
@@ -112,34 +116,48 @@ arm is one observation function, and vision is the only place in the standing su
 ekVachan can demonstrate something Von structurally cannot, in the same environment on the same
 metric.
 
-### Implementation checklist (PRD 8.1d), nothing started
+### Implementation checklist (PRD 8.1d) — steps 1-5 built and validated 2026-09-24, PRD 13a.13
 
-- [ ] **1.** Add `vizdoom>=1.3.1` to `pyproject.toml`; confirm `uv sync` leaves `torch` untouched.
-- [ ] **2.** `benchmarks/vizdoom/env.py` — Von's exact config. **Assert `get_available_buttons()`
-      matches the declared action names in order** (a silent mismatch maps every action to the
-      wrong button and yields a plausible, entirely wrong score).
-- [ ] **3.** `rubric.py` + **run the rubric-oracle baseline first** — no model, no GPU, a few CPU
-      seconds, and it is the number that says whether the benchmark measures game understanding
-      or instruction-following. Commit it, and the random baseline above, as evidence bundles so
-      these numbers stop living only in PRD prose (rule 10).
-- [ ] **4.** `observe.py::observe_text()`, byte-faithful to `format_doom_state()`; unit-test the
-      bucket boundaries.
-- [ ] **5.** `benchmarks/common/episodic.py::run_episodic_harness()` — a **new** loop, not a
-      branch through `run_harness()` (ViZDoom is closed-loop with no gold label; three benchmarks
-      depend on the static loop). Reuses `build_backend`, `make_arg_parser`, `write_bundle`,
-      `eval/metrics.py`. Validate with a mock backend, no torch/checkpoint, as 13a.12 did.
+- [x] **1.** Added `vizdoom>=1.3.1` to `pyproject.toml`; `uv sync` resolved it in <1s, `uv.lock`
+      diff is 105 insertions / 0 deletions, zero lines touching `torch`. `uv run python3 -c
+      "import vizdoom"` succeeds under this repo's Python 3.13 (not the system 3.6.15 trap).
+- [x] **2.** `benchmarks/vizdoom/env.py` — `DoomEnvironment`/`DoomSnapshot`, Von's exact config.
+      The `get_available_buttons()` order assertion ran for real against the live engine on both
+      scenarios and passed; a throwaway smoke episode registered a real `kills=1` after 20
+      `attack` steps before any harness code touched it.
+- [x] **3.** `rubric.py` + **the rubric-oracle baseline, run for real**: **11.125 kills** /
+      **19.71s survival** (8 published seeds, 1 ep/seed, `--rubric von`) — see PRD 13a.13 for the
+      honest surprise (this beats Von's own published 9.00). The random baseline was also
+      re-measured with this harness (not just the planning-pass probe): **1.275 kills / 14.65s
+      survival**, matching the probe's 1.53/14.09 within noise. Both committed as evidence
+      bundles under `results/vizdoom-*` (rule 10).
+- [x] **4.** `observe.py::observe_text()`, byte-faithful to `format_doom_state()`; bucket
+      boundaries unit-tested (`python -m benchmarks.vizdoom.observe`) — passes.
+- [x] **5.** `benchmarks/common/episodic.py::run_episodic_harness()` — the new closed-loop
+      counterpart to `run_harness()`, reusing `build_backend`, `make_arg_parser`, `write_bundle`,
+      `eval/metrics.py` unchanged. Validated with `--backend decoder-multischema-mock` against the
+      real ViZDoom engine (both scenarios, both rubrics, 4 committed evidence bundles) — same
+      no-torch/no-checkpoint discipline 13a.12 used for ScreenSpot-v2. JevBench/jabr-v2/
+      ScreenSpot-v2's own mock/selftest runs re-verified unaffected (139/231, 387/944, 858/858
+      unchanged) after the one new `RandomChoiceBackend` this required in the shared
+      `backends.py`/`harness.py`.
 - [ ] **6.** **Text arm for real** — `--backend decoder-multischema --checkpoint-dir
       checkpoints/ekvachan-decoder-qwen-benchcorpus`, both scenarios, both rubric conditions, all
-      16 published seeds. **This is the milestone and it needs nothing that does not exist.**
-      Report kills/survival + both baselines + `rubric_agreement` accuracy/Brier/ECE + p50/p95
-      latency + out-of-schema count (never repaired — 8.1a).
+      16 published seeds. **This is the milestone and it needs nothing that does not exist** —
+      deliberately not attempted in this build (GPU/checkpoint scoped out; a ~6h vision training
+      run was active throughout).
 - [ ] **7.** Write results into PRD 13a and here, win or lose, with manifest paths and Finding 2's
-      caveat in the text rather than a footnote.
+      caveat in the text rather than a footnote. (13a.13 already records everything *except* step
+      6's real-checkpoint numbers, which don't exist yet.)
 - [ ] **8.** **Vision arm** once `checkpoints/ekvachan-decoder-qwen-vision` lands and ScreenSpot-v2
       has produced its first real number. Same seeds/scenarios/metrics; reported as an
       ekVachan-only capability result, explicitly **not** a Von comparison.
-- [ ] **9.** Optional: 5.3b DAgger round 0 from step 6's already-on-policy rollouts. Stays in this
-      repo under `training/` per PRD 9's boundary rule.
+- [x] **9.** **Pulled forward, ahead of its original "optional, after 8" sequencing** — DAgger data
+      emission is wired and validated now (`benchmarks/common/episodic.py::DaggerSink`), since it
+      is nearly free once the episodic loop exists. Real run: `--dagger-out
+      training/dagger_data/vizdoom` on one seed produced 90 real `(text, frame, teacher_action)`
+      JSONL rows + 90 matching real PNG frames. Gitignored, nothing consumes it yet — see PRD
+      13a.13.
 
 Out of scope, deliberately: StarCraft and browser-use — separate harnesses, separate design
 questions, and neither blocks the Von comparison.
@@ -156,7 +174,7 @@ Anchor: this server's real Qwen3.5-4B LoRA runs took 65–75 min for 24k example
 | 2 | ~~**Fine-tune: base**~~ done 2026-09-23 (PRD 13a.10, `checkpoints/ekvachan-decoder-qwen-benchcorpus`, 4h40m): **noul 88.80%->95.48% (+6.68pp), score 75.40%->80.95% (+5.55pp)**, CLINC150 zero-shot regression check 95.73%->96.77% (held/improved). `choice` aggregate 92.02%->83.03% is NOT a real regression -- eval composition changed to include genuinely harder new domains (CFPB 59.02%, GoEmotions 57.88%) never tested before; tasks common to both runs (DBpedia, NLI, CLINC zero-shot) all held steady or improved | done | — |
 | 3 | ~~**Fine-tune: vision**~~ **launched** 2026-09-24 (PRD 13a.11): control run reproduced 13a.10 exactly (VL-class swap proven neutral), real vision data built (78,000 train / 6,550 eval_id, 16,000+1,800 real Atari-HEAD+OS-Atlas rows), real-data smoke run clean (0 OOM, above-chance accuracy). Built general (not vision-only) per owner instruction: `training/decoder_lora_lib.py` + `train_decoder_lora_general.py`, superseding 5.2b's planned sixth fork. Full run in progress, `checkpoints/ekvachan-decoder-qwen-vision` | ~7-8 hrs, in progress | — |
 | 4 | **Fine-tune: nano** | Smaller model, same bench-derived data mix | ~30–60 min | blocked on #1-3 landing first (data mix reuses their work) |
-| 5 | **Game harnesses** | ViZDoom/StarCraft/browser-use, run against whichever checkpoint is current at this point in the sequence — the actual head-to-head with Von. **ViZDoom design resolved 2026-09-24, PRD 8.1d**: text arm first (Von's own harness is text — verified from its published code — and the text arm runs today against `ekvachan-decoder-qwen-benchcorpus` with no GPU wait), vision arm second on identical seeds as an ekVachan-only capability result | **none for the text arm** — env is ~1,300-1,800 ticks/s on CPU, so a full 8-seed 2-scenario run is ~4,800 decisions ≈ 3 min of inference; vision arm needs #3's checkpoint | this is the real "how do we compare to Von" milestone. 8.1d's Finding 2 restates the Health-Gathering target: a random policy already beats both Von and Jev on it |
+| 5 | **Game harnesses** | ViZDoom/StarCraft/browser-use, run against whichever checkpoint is current at this point in the sequence — the actual head-to-head with Von. **ViZDoom harness built and validated 2026-09-24, PRD 13a.13** (text arm; the vision arm is second, on identical seeds, once #3's checkpoint lands): `python -m benchmarks.vizdoom.run --backend decoder-multischema --checkpoint-dir checkpoints/ekvachan-decoder-qwen-benchcorpus --scenario both --rubric both` is the one remaining command | **none for the text arm** — env is ~1,300-1,800 ticks/s on CPU, so a full 16-seed 2-scenario run is ~4,800 decisions ≈ 3 min of inference; vision arm needs #3's checkpoint | this is the real "how do we compare to Von" milestone. 13a.13's oracle baseline already scores *above* Von's own published 9.00 kills — a real, honest, unresolved signal worth reading before assuming the real run will simply "win" |
 | 6 | **Quantization** | Export + eval | ~10–20 min | needs a serving target — already have one (`serve/`) |
 | 7 | **Go public** | README/PRD/STATUS final pass, GitHub polish, announcement posts | none | after 1-6 land, so the public story is backed by the wider-data model and a real Von comparison, not the narrow one |
 | 8 | **Rust/ONNX port** | Real "faster than Jev" latency work | ~10–20 min GPU for validation; the port itself is non-GPU engineering | can trail the public release — current Python server (87-109ms) already proves the wire contract honestly with a stated target |

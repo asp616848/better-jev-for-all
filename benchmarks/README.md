@@ -1,14 +1,27 @@
 # benchmarks/
 
 Standing benchmark harnesses for PRD.md Section 8: **JevBench** (`jevbench/`),
-**jabr-v2** (`jabr_v2/`), and **ScreenSpot-v2** (`screenspot_v2/`, PRD.md
-5.2b/13a.11 — the vision analogue of the other two, added 2026-09-24). All
-three are real, runnable, tested harnesses. Against the only checkpoint that
-existed when the first two were built (`ekvachan-base`, the fixed-3-class
-encoder), both reported the same honest headline number: **0 real items
-answerable.** That result is unchanged and still real evidence (PRD.md
-13a.1/13a.3) — see "The one fact that shapes everything in here" below, and
-each subdirectory's README, for it.
+**jabr-v2** (`jabr_v2/`), **ScreenSpot-v2** (`screenspot_v2/`, PRD.md
+5.2b/13a.11 — the vision analogue of the other two, added 2026-09-24), and
+**ViZDoom** (`vizdoom/`, PRD.md 8.1d/13a.13 — added 2026-09-24, the only
+*episodic* one). Against the only checkpoint that existed when the first two
+were built (`ekvachan-base`, the fixed-3-class encoder), both reported the
+same honest headline number: **0 real items answerable.** That result is
+unchanged and still real evidence (PRD.md 13a.1/13a.3) — see "The one fact
+that shapes everything in here" below, and each subdirectory's README, for it.
+
+**Update 2026-09-24 (PRD.md 8.1d/13a.13): ViZDoom added.** The fourth
+standing benchmark, and structurally different from the other three: there is
+no frozen dataset, no gold label, and the item sequence is generated live by
+a closed-loop `Defend the Center`/`Health Gathering` ViZDoom episode reacting
+to the model's own actions — Von's own headline claim (9.00 kills vs. Jev's
+5.62) is a ViZDoom claim, run on Von's own published 8-seed-per-scenario
+protocol. This required a genuinely new shared module,
+`benchmarks/common/episodic.py::run_episodic_harness()`, rather than a branch
+through `run_harness()` (see its own docstring). Validated end to end against
+the real, headless ViZDoom engine with rubric-oracle/random/mock policies —
+no real checkpoint run yet, one command away once the GPU is free (see
+`benchmarks/vizdoom/README.md`).
 
 **Update 2026-09-24 (PRD.md 5.2b/13a.11): ScreenSpot-v2 added.** A third
 standing benchmark, vendored (as metadata only — see its own README's
@@ -103,7 +116,11 @@ benchmarks/
                         (vision multischema, PRD.md 5.2b/13a.11) -- one
                         interface, every way to actually answer a question
     evidence.py         writes the PRD.md 8.2 evidence bundle to results/
-    harness.py          the shared run loop + CLI argument parser
+    harness.py          the shared static-dataset run loop + CLI argument parser
+    episodic.py         the shared CLOSED-LOOP run loop (PRD.md 8.1d) -- for
+                        benchmarks with no frozen item list and no gold label
+                        (ViZDoom today); reuses build_backend/make_arg_parser/
+                        write_bundle/eval.metrics unchanged
   jevbench/
     vendored/            vendored JevBench public dataset (MIT) -- see NOTICE.md
     fixtures/            synthetic self-test fixture, NOT real data
@@ -122,6 +139,22 @@ benchmarks/
     loader.py, run.py
     README.md            what was verified, the real 858-item count, the
                         grounding-as-choice N-way reframing
+  vizdoom/
+    vendored/LICENSE     Von's own Apache-2.0 LICENSE text -- see NOTICE.md
+                        (no vendored dataset file here; the "vendored" content
+                        is a handful of literal protocol constants, attributed
+                        inline in env.py/observe.py/rubric.py)
+    env.py               DoomEnvironment + DoomSnapshot -- Von's exact config,
+                        against the real ViZDoom engine
+    observe.py            observe_text() -- byte-faithful to Von's
+                        format_doom_state(); observe_frame() is a documented
+                        stub (the vision arm, PRD.md 8.1d step 8)
+    rubric.py             --rubric von/none framing + rubric_action() (the
+                        deterministic oracle/DAgger teacher)
+    run.py                CLI: --scenario, --rubric, --policy (model/oracle),
+                        --backend, --seeds, --episodes-per-seed, --dagger-out
+    README.md             what was verified, the real oracle/random baseline
+                        numbers, what the vision arm still needs
 ```
 
 ## Running a harness
@@ -163,6 +196,23 @@ python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema \
 # transformers, or peft needed:
 python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema-mock
 python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema-mock --selftest
+
+# ViZDoom (PRD.md 8.1d/13a.13) -- episodic, no frozen dataset. Real text-arm
+# run against the milestone checkpoint, both scenarios, both rubric
+# conditions, all 16 published seeds:
+python -m benchmarks.vizdoom.run --backend decoder-multischema \
+    --checkpoint-dir checkpoints/ekvachan-decoder-qwen-benchcorpus \
+    --scenario both --rubric both
+
+# ViZDoom baselines that need no checkpoint at all -- the rubric-oracle
+# (Von's own rule run as a policy) and a uniform-random policy:
+python -m benchmarks.vizdoom.run --policy oracle --scenario both --rubric von
+python -m benchmarks.vizdoom.run --backend random --scenario both --rubric von \
+    --seeds 0,1,2,3,4,5,6,7 --episodes-per-seed 10
+
+# ViZDoom wiring self-test -- real ViZDoom episodes, no torch/transformers/
+# peft/checkpoint:
+python -m benchmarks.vizdoom.run --backend decoder-multischema-mock --scenario both
 ```
 
 Every run writes two files to `results/`:

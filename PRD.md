@@ -428,7 +428,7 @@ This is the section that makes G3/G7 falsifiable instead of a slogan.
 
 ### 8.1 Standing benchmarks we commit to running and publishing, win or lose
 1. **jabr-v2** (49-task, 869-case OOD benchmark Von reports on) — reproduce Von's exact eval harness/seeds if publicly available; if not, use the same task categories and disclose the difference. Target: beat Von's 72.0% macro-accuracy. Publish our number regardless of outcome.
-2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both). **Design resolved 2026-09-24 in 8.1d** (text arm first, vision arm second; Von's harness is text, verified from its own published code). **The survival target is restated there**: a uniform random policy measured on this server survives 14.09s, beating both Von's 12.11s and Jev's 13.03s, so that metric does not discriminate as configured and every published survival figure must carry the random baseline beside it. `Defend the Center` kills is the real bar.
+2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both). **Design resolved 2026-09-24 in 8.1d** (text arm first, vision arm second; Von's harness is text, verified from its own published code). **The survival target is restated there**: a uniform random policy measured on this server survives 14.09s, beating both Von's 12.11s and Jev's 13.03s, so that metric does not discriminate as configured and every published survival figure must carry the random baseline beside it. `Defend the Center` kills is the real bar. **Harness built and validated 2026-09-24 (13a.13)** — `benchmarks/vizdoom/`; the real run against a trained checkpoint is the one remaining step.
 3. **StarCraft Strongarm** mission via `tsai-sc`'s harness (license permitting) or a faithful reimplementation — measure win rate and attempts-to-first-win, compared against the "attempt 16" figure reported for Jev.
 4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap ekVachan in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
 5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable. First numbers, on our own eval split rather than any of the benchmarks above, are in 13a.1 — published here whether or not a shared-benchmark number ever flatters them.
@@ -450,6 +450,13 @@ it is the one that matters most: Von's headline claim (**9.00 kills vs Jev's 5.6
 claim, so this is the decisive head-to-head, not a nice-to-have. This section resolves it, the
 same way 5.2b resolved the vision architecture — by running things rather than reasoning about
 them.
+
+**Update 2026-09-24: the harness this section designs is now built** — `benchmarks/vizdoom/` +
+`benchmarks/common/episodic.py`, validated end to end against the real ViZDoom engine with the
+rubric-oracle, random, and mock policies (checklist steps 1-5 below). See 13a.13 for what was
+actually built and measured, including a real, honest surprise (the oracle baseline scores *above*
+Von's own published 9.00 kills). The real text-arm run against a trained checkpoint (step 6) is
+still pending — one command, listed in 13a.13 and `benchmarks/vizdoom/README.md`.
 
 Everything below was verified on this server on 2026-09-24, on CPU, with the 13a.11 training run
 untouched.
@@ -1113,6 +1120,53 @@ python -m benchmarks.screenspot_v2.run --backend decoder-vision-multischema \
 
 That turns the real, already-verified 858-item, N=2-to-6 grounding-as-choice set into real accuracy/Brier/ECE numbers, the same way `--backend decoder-multischema` already does for JevBench/jabr-v2 in 13a.7.
 
+### 13a.13 ViZDoom episodic harness built and validated end to end; one real, honest surprise about Von's own number (2026-09-24)
+
+8.1d designed the ViZDoom harness by reading Von's actual published code. This entry is the build: `benchmarks/vizdoom/` (`env.py`, `observe.py`, `rubric.py`, `run.py`, `README.md`, `NOTICE.md`, `vendored/LICENSE`) plus the new shared `benchmarks/common/episodic.py::run_episodic_harness()`, built by a session scoped to CPU-only work while 13a.11's vision run trained — no GPU touched, no `training/` lineage file touched. Checklist steps 1-5 of 8.1d's implementation order are done and verified against the real, running ViZDoom engine (not mocked at the environment level); step 6 (the real text-arm run against a trained checkpoint) is deliberately not attempted here, per this session's own scope.
+
+**`vizdoom>=1.3.1` installs cleanly under this repo's own `uv` environment**, resolving 100 packages in under a second and downloading only `vizdoom` + `pygame-ce` + 2 small transitive deps (~48MB) — confirmed by diffing `uv.lock` (105 insertions, 0 deletions, zero lines touching `torch`). `uv run python3 -c "import vizdoom"` succeeds under the repo's Python 3.13; the system `python3` (3.6.15) trap 8.1d Finding 1 warned about was never invoked.
+
+**The environment reproduces Von's protocol against the real engine, not a stub.** `DoomEnvironment`'s `get_available_buttons()` order assertion ran for real on both scenarios and passed. A throwaway smoke episode (`seed=42106076`, 20 `attack` steps) registered a real `kills=1` before any harness code touched it — confirming the action-to-button mapping and the game-variable read both work, not just type-check. `observe.py`'s bucket boundaries (`python -m benchmarks.vizdoom.observe`) are unit-tested against hand-built snapshots and pass.
+
+**Every baseline PRD.md 8.1d's checklist called for was actually run against the real engine:**
+
+- **The rubric-oracle baseline** (checklist step 3 — no model, no GPU, a few CPU-seconds), 8 published seeds, 1 episode each, `--rubric von`:
+
+  | Scenario | Oracle (this session, measured) | Von (published) | Jev (published) |
+  |---|---|---|---|
+  | `defend_the_center` kills | **11.125** (sd 2.03) | 9.00 | 5.62 |
+  | `health_gathering` survival s | **19.71** (sd 7.02) | 12.11 | 13.03 |
+
+  `rubric_agreement` is exactly 1.0 for both (the oracle *is* the rubric — a sanity check the scoring path works, not a result). **The real, honest surprise**: the oracle — a purely mechanical execution of Von's own published `instructions`, no learning of any kind — scores *above* Von's own reported 9.00 kills. This rests on one modeling choice Von's own text doesn't disambiguate (which enemy/medkit governs the decision when more than one is visible — this harness's oracle attends to the nearest/largest-apparent one), so it is evidence toward, not proof of, 3.1's claim that Von leans heavily on rubric text rather than learned game understanding — stated with that caveat in `benchmarks/vizdoom/README.md`, not oversold here.
+
+- **The random-policy baseline**, reproducing 8.1d Finding 2's own probe methodology exactly (8 seeds `0..7` × 10 episodes, uniform random, `tics=4`) so this harness's environment loop and metric extraction are checked against the already-verified probe, not trusted as a second, independent implementation:
+
+  | Scenario | This harness (n=80 episodes) | 8.1d's probe | Von's own published random |
+  |---|---|---|---|
+  | `defend_the_center` kills | **1.275** (sd-across-seeds 0.19, per-seed range 0.9-1.6) | 1.53 (sd 0.39, range 0.9-2.0) | 1.88 |
+  | `health_gathering` survival s | **14.65** (sd-across-seeds 1.22, per-seed range 13.17-16.91) | 14.09 (sd 1.03) | 15.77 |
+
+  Both numbers land in the same ballpark as the probe's own measurement — the sanity check 8.1d's checklist asked for, passed. Finding 2's conclusion is reproduced with this harness's own real number, not just re-cited: `health_gathering` survival (14.65s) still exceeds Von's published 12.11s from a policy with zero intelligence.
+
+- **The harness wiring self-test**, `--backend decoder-multischema-mock`, both scenarios, both rubric conditions, real ViZDoom episodes, no torch/transformers/peft/checkpoint — 4 committed evidence bundles (`results/vizdoom-{defend_the_center,health_gathering}-{von,none}-decoder_multischema_mock-*`). Its `rubric_agreement` numbers mean nothing about game understanding, same discipline as every other Mock backend in this repo.
+
+All of the above are real, committed evidence bundles under `results/vizdoom-*` (8.2 discipline) — re-derive from those files, not this paragraph.
+
+**DAgger-teacher data emission (5.3b / 8.1d Finding 4 point 3) is wired and validated, ahead of its original "optional, step 9" sequencing** — pulled forward into this build because it is nearly free once the episodic loop exists, and validating it now (with a mock policy, no GPU) proves the data-collection path before any real GPU time is spent on it. `benchmarks/common/episodic.py::DaggerSink` emits one `(text, frame, teacher_action, model_action)` row per tick to `training/dagger_data/<benchmark>/<run_id>/triples.jsonl` plus one real PNG per tick under `frames/` (gitignored — real, regenerable, per-checkpoint rollout output, same discipline as `checkpoints/` and `results/*.raw`). Run for real: `--dagger-out training/dagger_data/vizdoom` on one seed of `defend_the_center`/`von` produced 90 real JSONL rows and 90 matching real 320×240×3 PNG frames pulled from the real `screen_buffer`. Nothing downstream consumes this data yet — no vision-arm trainer exists to read it (that's 8.1d step 8) — this is data-collection infrastructure built and proven, not a training result.
+
+**`benchmarks/common/backends.py` gained one new backend, `RandomChoiceBackend`** (`--backend random`), deliberately general rather than ViZDoom-specific: a uniform-random policy over whatever options an item/decision offers, seeded by `--seed`. Unlike the existing Mock backends, this is a real, publishable control (it is what produced the random-baseline numbers above), not a wiring self-test — its `describe()` still says "NOT a trained model" so it's never mistaken for one. `benchmarks/common/harness.py`'s `build_backend()`/`make_arg_parser()` gained the one matching `elif`/choice-list entry; both are otherwise untouched, and JevBench/jabr-v2/ScreenSpot-v2's mock/selftest runs were re-run after this change and reproduced their existing 139/231, 387/944, and 858/858 counts exactly — no regression.
+
+**Architecture**: `benchmarks/common/episodic.py` is the new closed-loop counterpart to `run_harness()`, exactly as 8.1d specified — same evidence-bundle contract (`write_bundle`), same `eval/metrics.py::full_report()` (scored here against the rubric's own prescribed action, never presented as accuracy against a gold label — ViZDoom has none), same `build_backend`/`make_arg_parser`, zero changes to `run_harness()` itself. One new seam it introduces: a `Policy` interface (`BackendPolicy` adapts any text-only `ChoiceBackend`; `OraclePolicy` runs the rubric directly) — the only place a raw environment snapshot becomes visible to anything, so a static-benchmark `ChoiceBackend` never has to know episodic benchmarks exist. 8.1a's no-schema-repair rule is honored in a closed loop by substituting a fixed fallback action only to keep the episode advancing, while recording the substitution — never scoring it as correct.
+
+**What's left is exactly one command, once the GPU frees up (no checkpoint needs to be trained — `checkpoints/ekvachan-decoder-qwen-benchcorpus` already exists and is validated, 13a.7/13a.10):**
+
+```sh
+python -m benchmarks.vizdoom.run --backend decoder-multischema \
+    --checkpoint-dir checkpoints/ekvachan-decoder-qwen-benchcorpus \
+    --scenario both --rubric both
+```
+
+That is 8.1d's actual milestone: Von's own 9.00 kills / 12.11s survival, compared like-for-like, under both rubric conditions, with the random and rubric-oracle baselines from this entry reported beside it.
 
 ## 14. Open questions
 
