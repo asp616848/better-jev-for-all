@@ -39,7 +39,7 @@ import json
 import time
 from pathlib import Path
 
-from serve.inference import load_default_router
+from serve.inference import DEFAULT_NOUL_INSTRUCTIONS, load_default_router
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -51,22 +51,55 @@ def main():
     report = {"describe": model.describe(), "checks": {}}
 
     # --- 1. noul: sane float, exactly matches the underlying 2-way choice ---
+    # BOOLQ_INSTRUCTIONS is training/build_primitives_slice.py's own literal
+    # constant (read off that frozen file, not guessed) -- the real
+    # in-distribution phrasing/state shape ("Passage: ...\n\nQuestion: ...")
+    # this checkpoint's noul training data actually used. The spam-email case
+    # deliberately does NOT match that shape or domain -- it's included to
+    # report honestly on out-of-distribution behavior too, not just the
+    # easy/matched case.
+    BOOLQ_INSTRUCTIONS = (
+        'Given the passage above and a yes/no question about it, choose '
+        'whether the correct answer is "Yes" or "No".'
+    )
     noul_cases = [
         (
             "Subject: You've WON $1,000,000!!! Click here NOW to claim your prize before it's gone!!!",
+            None,  # predict_noul's own DEFAULT_NOUL_INSTRUCTIONS fallback
             True,
+            "out-of-distribution: no anti-spam data in this checkpoint's training mix "
+            "(PRD.md 13a.8/13a.10) -- included to report real behavior honestly, not just the easy case",
         ),
         (
             "Subject: Reminder - team meeting tomorrow at 10am in Conference Room B.",
+            None,
             False,
+            "out-of-distribution, same reason as above",
+        ),
+        (
+            "Passage: The Great Wall of China is a series of fortifications built across "
+            "the historical northern borders of ancient Chinese states to protect against "
+            "raids and invasions.\n\nQuestion: is the great wall of china located in northern china",
+            BOOLQ_INSTRUCTIONS,
+            True,
+            "in-distribution: real BoolQ-shaped passage/question, this checkpoint's actual noul source",
         ),
     ]
     noul_results = []
-    for state, expect_yes in noul_cases:
-        p_yes = model.predict_noul(state)
-        underlying = model.predict_choice(state, ["Yes", "No"])
+    for state, instructions, expect_yes, note in noul_cases:
+        p_yes = model.predict_noul(state, instructions=instructions)
+        # Same instructions predict_noul() itself used (its own
+        # DEFAULT_NOUL_INSTRUCTIONS fallback when instructions is None) --
+        # otherwise this "underlying" call would build a DIFFERENT prompt
+        # (predict_choice's own generic default) and the comparison below
+        # would be comparing two different questions, not the same one read
+        # two ways.
+        underlying = model.predict_choice(
+            state, ["Yes", "No"], instructions=instructions or DEFAULT_NOUL_INSTRUCTIONS
+        )
         noul_results.append({
             "state": state,
+            "note": note,
             "p_yes": p_yes,
             "underlying_choice": underlying["choice"],
             "underlying_probabilities": underlying["probabilities"],
@@ -118,11 +151,50 @@ def main():
     print("score:", score_check)
     report["checks"]["score"] = score_check
 
-    # --- 3. image routing -- only if the vision checkpoint has landed -------
+    # --- 3. image routing -- real if the vision checkpoint has landed, -----
+    #        a routing-rule-only check otherwise --------------------------
+    import base64
+
     vision_manifest = REPO_ROOT / "checkpoints" / "ekvachan-decoder-qwen-vision" / "manifest.json"
     report["vision_checkpoint_ready"] = vision_manifest.exists()
+
     if vision_manifest.exists():
-        report["checks"]["image_routing"] = "vision checkpoint present -- see follow-up manifest for the real check"
+        # A real image, read from better-jev-bench's content-addressed cache
+        # -- the same sanctioned cross-repo read pattern
+        # training/adapt_bench_vision_export.py and benchmarks/screenspot_v2
+        # already established ("both repos share a server, so `path` is
+        # already a real, directly-readable local file, no copy needed").
+        # This script never writes into that sibling repo, only reads one
+        # file from it. The path is discovered, not hardcoded, so this
+        # script degrades gracefully in an environment without the sibling
+        # repo cloned.
+        bench_images_dir = REPO_ROOT.parent / "bench-repo" / "data" / "images" / "screenspot_v2"
+        real_image_path = next(bench_images_dir.rglob("*.jpg"), None) or next(
+            bench_images_dir.rglob("*.png"), None
+        )
+        if real_image_path is None:
+            report["checks"]["image_routing"] = {
+                "status": "SKIPPED",
+                "reason": f"vision checkpoint exists, but no real image file found under "
+                          f"{bench_images_dir} to test with (better-jev-bench not cloned as a sibling?).",
+            }
+        else:
+            image_b64 = base64.b64encode(real_image_path.read_bytes()).decode("ascii")
+            t_img = time.time()
+            image_result = model.predict_choice(
+                "A screenshot of a desktop application.",
+                ["the top-left corner of the screen", "the bottom-right corner of the screen"],
+                image_b64=image_b64,
+            )
+            report["checks"]["image_routing"] = {
+                "status": "RAN",
+                "real_image_path": str(real_image_path),
+                "image_bytes": len(image_b64),
+                "result": image_result,
+                "used_vision_adapter": image_result.get("adapter") == model.VISION_ADAPTER_NAME,
+                "latency_seconds": time.time() - t_img,
+            }
+            print("image routing (real vision checkpoint):", report["checks"]["image_routing"])
     else:
         report["checks"]["image_routing"] = {
             "status": "SKIPPED",
@@ -132,7 +204,6 @@ def main():
         # Still worth proving the routing *rule* itself is enforced even
         # without a real vision checkpoint: an image-bearing request must be
         # rejected with a clear error, not silently answered text-only.
-        import base64
         tiny_png_b64 = base64.b64encode(
             bytes.fromhex(
                 "89504e470d0a1a0a0000000d49484452000000010000000108020000009077"

@@ -1,0 +1,107 @@
+{
+  "describe": {
+    "base_model": "Qwen/Qwen3.5-4B",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "loaded_adapters": [
+      "benchcorpus",
+      "vision"
+    ],
+    "vision_available": true,
+    "text_adapter_choice": "benchcorpus",
+    "text_adapter_choice_is_configured": true,
+    "max_options": 26,
+    "n_lora_modules": 128,
+    "device": "cuda"
+  },
+  "checks": {
+    "noul": [
+      {
+        "state": "Subject: You've WON $1,000,000!!! Click here NOW to claim your prize before it's gone!!!",
+        "p_yes": 0.16451644897460938,
+        "underlying_choice": "No",
+        "underlying_probabilities": {
+          "Yes": 0.18242551386356354,
+          "No": 0.8175744414329529
+        },
+        "matches_underlying_choice_p_yes_exactly": false,
+        "expected_answer_is_yes": true,
+        "predicted_answer_is_yes": false,
+        "correct": false
+      },
+      {
+        "state": "Subject: Reminder - team meeting tomorrow at 10am in Conference Room B.",
+        "p_yes": 0.4687906503677368,
+        "underlying_choice": "Yes",
+        "underlying_probabilities": {
+          "Yes": 0.5926666259765625,
+          "No": 0.4073334336280823
+        },
+        "matches_underlying_choice_p_yes_exactly": false,
+        "expected_answer_is_yes": false,
+        "predicted_answer_is_yes": false,
+        "correct": true
+      }
+    ],
+    "score": {
+      "state": "My production database is down and customers cannot check out. Losing $10k/minute.",
+      "levels_ascending": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "result_ascending": {
+        "score": 2.9093241202645004,
+        "probabilities": {
+          "low": 0.0012111051473766565,
+          "medium": 0.0010687964968383312,
+          "high": 0.08490502089262009,
+          "critical": 0.9128150939941406
+        },
+        "confidence": 0.9128150939941406
+      },
+      "levels_descending": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
+      "result_descending": {
+        "score": 0.06554529932327569,
+        "probabilities": {
+          "critical": 0.9411096572875977,
+          "high": 0.05309377610683441,
+          "medium": 0.0049384902231395245,
+          "low": 0.0008581809233874083
+        },
+        "confidence": 0.9411096572875977
+      },
+      "argmax_level_name_ascending": "critical",
+      "argmax_level_name_descending": "critical",
+      "argmax_level_name_is_order_invariant": true,
+      "argmax_index_in_ascending_order": 3,
+      "weighted_score_differs_from_plain_argmax_index": true,
+      "reversing_order_changes_numeric_score": true,
+      "probabilities_keyed_by_exact_level_strings_given": true
+    },
+    "image_routing": {
+      "status": "RAN",
+      "real_image_path": "/data/interns/studentiotlab/ekvachan/bench-repo/data/images/screenspot_v2/13/131b137949667565c64ecc1cb770b2ef5629ff5370a063b2b598a4a47a4a8c5e.jpg",
+      "image_bytes": 497972,
+      "result": {
+        "choice": "the top-left corner of the screen",
+        "probabilities": {
+          "the top-left corner of the screen": 0.7549149990081787,
+          "the bottom-right corner of the screen": 0.24508501589298248
+        },
+        "confidence": 0.7549149990081787,
+        "adapter": "vision"
+      },
+      "used_vision_adapter": true,
+      "latency_seconds": 1.3071789741516113
+    }
+  },
+  "vision_checkpoint_ready": true,
+  "elapsed_seconds": 21.474411964416504,
+  "timestamp_utc": "2026-09-24T07:39:05Z"
+}

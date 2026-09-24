@@ -174,19 +174,22 @@ def load_default_decoder() -> DecoderChoiceModel:
 # against checkpoints/ekvachan-decoder-qwen-vision once it finishes training
 # -- decides whether the vision-mixed adapter is safe to use for text too
 # (one adapter for everything) or whether ekvachan permanently ships two
-# adapters (text keeps using the benchcorpus adapter). That check has NOT
-# been run as of this writing (the vision checkpoint was still training).
+# adapters (text keeps using the benchcorpus adapter).
 #
-# The default below is deliberately NOT a real adapter name. Instead of
-# quietly picking "benchcorpus" (which would look like this file made the
-# call the regression check is supposed to make), it is a sentinel that
-# raises a clear, actionable AdapterNotConfiguredError for any plain-text
-# request until the coordinating session sets it explicitly -- either via
-# the EKVACHAN_TEXT_ADAPTER env var, or by passing `text_adapter=` directly
-# to RoutingDecoderModel/load_default_router (as this repo's own validation
-# scripts do, deliberately, to exercise the known-stable benchcorpus
-# checkpoint today without changing the shipped default).
-TEXT_ADAPTER_PENDING_SENTINEL = "PENDING_REGRESSION_CHECK__SEE_PRD_5.2b"
+# RESOLVED 2026-09-24, PRD.md 13a.11/13a.14, real numbers, not a guess:
+# checkpoints/ekvachan-decoder-qwen-vision's own eval_id run against
+# 13a.10's exact held-out text sources came back BETTER, not just "not
+# worse" -- aggregate text `choice` accuracy 83.03% -> 90.71% (+7.68pp),
+# CLINC150 zero-shot 96.47% (comfortably clears the pre-committed >=95.5%
+# bar). A few small-n sources (WaNLI n=30, SNLI-test n=44) dipped a few
+# points, consistent with sampling noise on a slice that size, not a
+# regression -- the aggregate move is an order of magnitude larger and in
+# the opposite direction. Decision: ship ONE adapter for everything, text
+# and vision alike. The sentinel/two-adapter machinery below is kept as
+# real, tested infrastructure (not deleted) in case a future retrain ever
+# does regress and this decision needs to be revisited -- EKVACHAN_TEXT_ADAPTER
+# still overrides this default if that day comes.
+TEXT_ADAPTER_PENDING_SENTINEL = "vision"
 
 
 def _ensure_vlclass_adapter_dir(checkpoint_dir: Path) -> Path:

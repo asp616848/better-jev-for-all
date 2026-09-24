@@ -1,0 +1,220 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "architecture": "decoder-lora-restricted-logit-general",
+  "script": "training/train_decoder_lora_general.py",
+  "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+  "vision_rows_detected": true,
+  "max_options": 26,
+  "max_length": 1280,
+  "max_pixels": 200704,
+  "truncate": false,
+  "min_free_vram_gb": 14,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "n_lora_modules": 128,
+  "train_size": 78000,
+  "calib_size": 1965,
+  "eval_id_test_size": 4585,
+  "eval_ood_size": 3000,
+  "temperature": 0.9274559444109025,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 4585,
+    "accuracy": 0.9075245365321701,
+    "brier": 0.13165439665317535,
+    "ece": 0.016748359029139667
+  },
+  "eval_id_calibrated_report": {
+    "n": 4585,
+    "accuracy": 0.9075245365321701,
+    "brier": 0.1312885582447052,
+    "ece": 0.012147730309414632
+  },
+  "eval_id_raw_by_source": {
+    "anli_r1_dev": {
+      "n": 7,
+      "accuracy": 1.0,
+      "brier": 0.09539470821619034,
+      "ece": 0.19071537256240845
+    },
+    "anli_r1_test": {
+      "n": 7,
+      "accuracy": 0.8571428571428571,
+      "brier": 0.2452053725719452,
+      "ece": 0.264654883316585
+    },
+    "anli_r2_dev": {
+      "n": 4,
+      "accuracy": 0.75,
+      "brier": 0.46353402733802795,
+      "ece": 0.4059372693300247
+    },
+    "anli_r2_test": {
+      "n": 5,
+      "accuracy": 0.4,
+      "brier": 0.8483191728591919,
+      "ece": 0.5598202228546143
+    },
+    "anli_r3_dev": {
+      "n": 7,
+      "accuracy": 0.8571428571428571,
+      "brier": 0.3917895257472992,
+      "ece": 0.37722035816737576
+    },
+    "anli_r3_test": {
+      "n": 8,
+      "accuracy": 0.375,
+      "brier": 0.8001234531402588,
+      "ece": 0.5732032880187035
+    },
+    "bjb:atari_head/action": {
+      "n": 680,
+      "accuracy": 0.9970588235294118,
+      "brier": 0.015683935955166817,
+      "ece": 0.04564671910860962
+    },
+    "bjb:banking77/intent": {
+      "n": 287,
+      "accuracy": 0.9442508710801394,
+      "brier": 0.09186301380395889,
+      "ece": 0.04263930142133493
+    },
+    "bjb:cfpb_complaints/product": {
+      "n": 284,
+      "accuracy": 0.8415492957746479,
+      "brier": 0.2391873002052307,
+      "ece": 0.05314711156025739
+    },
+    "bjb:civil_comments/is_toxic": {
+      "n": 271,
+      "accuracy": 0.933579335793358,
+      "brier": 0.07756368815898895,
+      "ece": 0.038045135591302855
+    },
+    "bjb:civil_comments/toxicity_level": {
+      "n": 271,
+      "accuracy": 0.8191881918819188,
+      "brier": 0.24747194349765778,
+      "ece": 0.06664186562119374
+    },
+    "bjb:cuad/clause_present": {
+      "n": 287,
+      "accuracy": 0.9721254355400697,
+      "brier": 0.06374280899763107,
+      "ece": 0.031908959046473506
+    },
+    "bjb:cuad/clause_type": {
+      "n": 274,
+      "accuracy": 0.9014598540145985,
+      "brier": 0.13514186441898346,
+      "ece": 0.025528594307655837
+    },
+    "bjb:go_emotions/emotion": {
+      "n": 270,
+      "accuracy": 0.5518518518518518,
+      "brier": 0.5383743047714233,
+      "ece": 0.12336356154194587
+    },
+    "bjb:ledgar/provision_type": {
+      "n": 286,
+      "accuracy": 0.8951048951048951,
+      "brier": 0.1553545892238617,
+      "ece": 0.038651174286028725
+    },
+    "bjb:massive/intent": {
+      "n": 298,
+      "accuracy": 0.9328859060402684,
+      "brier": 0.11994536966085434,
+      "ece": 0.03409133551504789
+    },
+    "bjb:massive/scenario": {
+      "n": 252,
+      "accuracy": 0.9325396825396826,
+      "brier": 0.10339965671300888,
+      "ece": 0.01739607751369477
+    },
+    "bjb:os_atlas/target_element": {
+      "n": 589,
+      "accuracy": 0.9507640067911715,
+      "brier": 0.07242688536643982,
+      "ece": 0.020014758830564326
+    },
+    "dbpedia_14_fullwidth_test": {
+      "n": 262,
+      "accuracy": 0.9961832061068703,
+      "brier": 0.0048609827645123005,
+      "ece": 0.004614784289862363
+    },
+    "mnli_validation_matched": {
+      "n": 59,
+      "accuracy": 0.9491525423728814,
+      "brier": 0.10595367848873138,
+      "ece": 0.11139732599258424
+    },
+    "mnli_validation_mismatched": {
+      "n": 50,
+      "accuracy": 0.88,
+      "brier": 0.17108666896820068,
+      "ece": 0.0862120497226715
+    },
+    "snli_test": {
+      "n": 44,
+      "accuracy": 0.8863636363636364,
+      "brier": 0.15679514408111572,
+      "ece": 0.10393224521116777
+    },
+    "snli_validation": {
+      "n": 53,
+      "accuracy": 0.9245283018867925,
+      "brier": 0.11065029352903366,
+      "ece": 0.1042999951344616
+    },
+    "wanli_test": {
+      "n": 30,
+      "accuracy": 0.6,
+      "brier": 0.4850086569786072,
+      "ece": 0.2554173946380615
+    }
+  },
+  "eval_id_raw_by_question_type": {
+    "choice": {
+      "n": 3756,
+      "accuracy": 0.9070820021299254,
+      "brier": 0.13238990306854248,
+      "ece": 0.015789423237085598
+    },
+    "noul": {
+      "n": 558,
+      "accuracy": 0.953405017921147,
+      "brier": 0.07045510411262512,
+      "ece": 0.018164522011220235
+    },
+    "score": {
+      "n": 271,
+      "accuracy": 0.8191881918819188,
+      "brier": 0.24747194349765778,
+      "ece": 0.06664186562119374
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.9646666666666667,
+    "brier": 0.05690951645374298,
+    "ece": 0.028412775198618574
+  },
+  "eval_ood_raw_by_source": {
+    "clinc150_oos_small_wide": {
+      "n": 3000,
+      "accuracy": 0.9646666666666667,
+      "brier": 0.05690951645374298,
+      "ece": 0.028412775198618574
+    }
+  },
+  "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval -- regression check: does this data mix hurt choice generalization relative to the prior lineage's own numbers?",
+  "run_note": "first real vision run (relaunch, max-length raised 768->1280 after build-assertion gap fix): 62k text (13a.10 unchanged) + 16k real Atari-HEAD/OS-Atlas vision rows, PRD 13a.11",
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-24T07:35:26Z",
+  "total_train_seconds": 24287.770965337753
+}
