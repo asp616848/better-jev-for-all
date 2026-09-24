@@ -14,14 +14,27 @@ changed when the multischema filter was added.
 
 `filter_supported_multischema()` is the analogous decision for the decoder/
 multischema path (PRD.md Section 14 Q4, 13a.5): a model whose restricted-
-logit mechanism can answer ANY `choice` question with between 2 and
-`max_options` options (see benchmarks/common/schema.py's
+logit mechanism can answer ANY `choice`, `noul`, or `score` question with
+between 2 and `max_options` options (see benchmarks/common/schema.py's
 DECODER_MULTISCHEMA_MAX_OPTIONS docstring for where that ceiling comes from
-and why it isn't just assumed to be 26). It rejects (and counts, by reason,
-the same way) `score`/`noul` items -- no model has been trained for either --
-and `choice` items with more options than the cap, or whose gold `expected`
-label isn't even present in their own `options` list (a data-integrity
-problem no filter should silently paper over).
+and why it isn't just assumed to be 26). Rejects items with more options
+than the cap, or whose gold `expected` label isn't even present in their own
+`options` list (a data-integrity problem no filter should silently paper
+over).
+
+**Fixed 2026-09-24**: this used to reject every `noul`/`score` item outright
+with the comment "no trained model exists for either" -- true when this was
+first written, false since better-jev-for-all PRD.md 13a.8 (noul/score both
+trained; 95.34%/81.92% as of 13a.14). Both primitives are internally just
+lettered choices to this project's restricted-logit mechanism (noul: a
+synthesized 2-way Yes/No choice; score: an N-way choice over the ordinal
+scale, in the scale's own given order, never reshuffled) -- exactly the same
+shape `filter_supported_multischema` already validates for `choice`, so no
+new logic was needed here, only removing the type check that blocked it.
+The loaders (`benchmarks/jevbench/loader.py`, `benchmarks/jabr_v2/loader.py`)
+were fixed alongside this to actually populate `options`/`expected` for
+`noul`/`score` items -- jabr-v2's previously returned `options=None` for
+both (see that loader's own docstring for the real fix).
 
 Nothing in either function ever forces an unanswerable item onto a model, and
 neither silently drops an item. An item either is answerable and is
@@ -80,25 +93,25 @@ def filter_supported_multischema(items: list[Item], max_options: int) -> SchemaF
     reasons: Counter = Counter()
 
     for item in items:
-        if item.question_type != "choice":
-            reasons[f"question_type={item.question_type!r} (no trained model for 'score'/'noul')"] += 1
+        if item.question_type not in ("choice", "noul", "score"):
+            reasons[f"question_type={item.question_type!r} (not choice/noul/score)"] += 1
             unsupported.append(item)
             continue
         if not item.options:
-            reasons["'choice' item has no options/labels recorded"] += 1
+            reasons[f"{item.question_type!r} item has no options/labels recorded"] += 1
             unsupported.append(item)
             continue
         n = len(item.options)
         if n < 2:
-            reasons[f"'choice' item has fewer than 2 options ({n})"] += 1
+            reasons[f"{item.question_type!r} item has fewer than 2 options ({n})"] += 1
             unsupported.append(item)
             continue
         if n > max_options:
-            reasons[f"'choice' item has {n} options > max_options cap ({max_options})"] += 1
+            reasons[f"{item.question_type!r} item has {n} options > max_options cap ({max_options})"] += 1
             unsupported.append(item)
             continue
         if item.expected not in item.options:
-            reasons["'choice' item's gold 'expected' label is not in its own 'options' list (data integrity)"] += 1
+            reasons[f"{item.question_type!r} item's gold 'expected' label is not in its own 'options' list (data integrity)"] += 1
             unsupported.append(item)
             continue
         supported.append(item)

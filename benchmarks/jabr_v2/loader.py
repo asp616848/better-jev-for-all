@@ -32,6 +32,17 @@ README cite -- is still marked "under review" / unlocked upstream as of the
 vendor date. See README.md for what that means for reproducibility, and note
 this loader records its own sha256 of exactly what was vendored, since
 upstream has not frozen one for v2 yet.
+
+**Fixed 2026-09-24**: `noul`/`score` tasks previously got `options=None` and
+a raw `expected` (a bool for noul, an int level index for score) -- correct
+for the schema filter that existed when this was written (it rejected both
+types outright), wrong now that `training/build_primitives_slice.py`'s
+lineage trains real noul/score models (better-jev-for-all PRD.md 13a.8/
+13a.10/13a.14). Confirmed directly against the real vendored TOML: a `noul`
+task carries no `criteria` at all, just `instructions` and a bool `expected`
+per case; a `score` task's `criteria` is a *list* of level descriptions in
+ascending index order (not the dict `choice` uses), and `expected` is an int
+index into that list. `_options_for`/`_expected_for` below now handle both.
 """
 
 from __future__ import annotations
@@ -50,12 +61,33 @@ SUITE_FILES = {
 
 
 def _options_for(task: dict) -> list[str] | None:
-    if task.get("type") != "choice":
-        return None
+    task_type = task.get("type")
     criteria = task.get("question", {}).get("criteria")
-    if not isinstance(criteria, dict):
-        return None
-    return list(criteria.keys())
+    if task_type == "choice":
+        return list(criteria.keys()) if isinstance(criteria, dict) else None
+    if task_type == "score":
+        # criteria is a list of level descriptions, ascending index order --
+        # confirmed directly against the real vendored TOML (module docstring).
+        # Never reordered here: score's ordinal semantics depend on this
+        # staying in the exact order the source gave it.
+        return list(criteria) if isinstance(criteria, list) else None
+    if task_type == "noul":
+        # No criteria field exists for noul tasks at all -- synthesize the
+        # same Yes/No pair this project's own noul training/serving uses
+        # (better-jev-for-all training/build_primitives_slice.py, serve/inference.py).
+        return ["Yes", "No"]
+    return None
+
+
+def _expected_for(task_type: str, options: list[str] | None, raw_expected) -> object:
+    """Converts a case's raw `expected` (a plain label for choice, a bool for
+    noul, an int level index for score) into the exact option-text string
+    `benchmarks.common.items.Item.expected` needs to equal one of `options`."""
+    if task_type == "noul":
+        return "Yes" if raw_expected is True else "No"
+    if task_type == "score" and isinstance(raw_expected, int) and options is not None:
+        return options[raw_expected]
+    return raw_expected
 
 
 def load_toml_file(path: Path, suite_name: str) -> list[Item]:
@@ -73,7 +105,7 @@ def load_toml_file(path: Path, suite_name: str) -> list[Item]:
                 state=case["state"],
                 instructions=question.get("instructions"),
                 options=options,
-                expected=case.get("expected"),
+                expected=_expected_for(task["type"], options, case.get("expected")),
             ))
     return items
 

@@ -39,6 +39,17 @@ PUBLIC_FILES = {
 
 def _record_to_item(rec: dict) -> Item:
     q = rec["question"]
+    options = list(rec["labels"]) if rec.get("labels") else None
+    expected = rec.get("expected")
+    # Fixed 2026-09-24: found by the first real noul/score run through
+    # filter_supported_multischema. `score` items give `expected` as a raw
+    # int index (e.g. 0) while `labels` are the level strings themselves
+    # (e.g. ["0","1","2","3"]) -- an int can never equal one of its own
+    # options-list strings, so every score item failed the filter's
+    # data-integrity check. `choice`/`noul` already give `expected` as a
+    # plain string matching one of `labels` -- untouched here.
+    if q["type"] == "score" and isinstance(expected, int) and options is not None and 0 <= expected < len(options):
+        expected = options[expected]
     return Item(
         benchmark="jevbench",
         source_split=f"{rec.get('split', 'public')}:{rec.get('family', '?')}",
@@ -46,8 +57,8 @@ def _record_to_item(rec: dict) -> Item:
         question_type=q["type"],
         state=rec["state"],
         instructions=q.get("instructions"),
-        options=list(rec["labels"]) if rec.get("labels") else None,
-        expected=rec.get("expected"),
+        options=options,
+        expected=expected,
     )
 
 

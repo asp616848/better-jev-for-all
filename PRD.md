@@ -1208,6 +1208,25 @@ Evidence: `results/{jevbench,jabr_v2}-decoder_multischema-20260924T0744*/0745*.m
 **A fourth real evaluation, in the sibling better-jev-bench repo**: `bjb evaluate` (its own scoring engine, PRD §14) ran against this same checkpoint for real -- Intelligence 42.46, Calibration 88.52, Generality **0.0**. That last number is real and diagnostic, not a failure of the run: 6 of the bench corpus's 14 real tasks (banking77 77-way, clinc150 151-way, ledgar 100-way, massive/intent 60-way, cuad/clause_type 41-way, go_emotions 28-way) exceed this project's 26-option ceiling, so the `width` family -- and Generality with it -- cannot score above zero until that gap closes. This is the first *quantified* case, on real license-clean corpus data (not a hypothetical), for 5.1a's cross-attention head or a multi-token option scheme -- concretely stronger evidence than "no real benchmark item has needed it yet" (13a.5), because now one has, six times over. See better-jev-bench's own `better-jev-bench_PRD.md` for the full writeup.
 
 
+### 13a.16 JevBench and jabr-v2 reach complete coverage: two real loader bugs fixed, real full numbers (2026-09-24)
+
+An owner-and-Opus-reviewed comparison pass (13a.15's own numbers) flagged that `benchmarks/common/schema_filter.py` still hard-rejected every `noul`/`score` item with a comment ("no trained model exists for either") that stopped being true at 13a.8. Fixing it surfaced two real, independent bugs the stale filter had been silently hiding -- neither is a filter problem, both are loader problems that only mattered once `noul`/`score` items were actually allowed through:
+
+1. **jabr-v2's loader discarded `options` entirely for non-`choice` tasks** (`_options_for` returned `None` for anything but `choice`). Fixed: `noul` tasks synthesize the same `["Yes","No"]` pair this project's own noul training/serving uses (no `criteria` field exists for `noul` in the real vendored TOML -- confirmed directly, not assumed); `score` tasks read their real `criteria` list (confirmed to already be in ascending index order in the source) instead of returning `None`. `expected` is converted alongside: a bool for `noul` -> `"Yes"`/`"No"`, an int level index for `score` -> that index's own option string.
+2. **JevBench's `score` items gave `expected` as a raw int index while `options`/`labels` are the level strings themselves** (e.g. `options=["0","1","2","3"]`, `expected=0` -- an int can never equal one of its own option strings). Fixed the same way: `expected` resolves to `options[expected]` for `score` items.
+
+**Real, complete numbers, both benchmarks at 100% coverage for the first time**:
+
+| Benchmark | Coverage | Accuracy (13a.7/13a.15, subset) | Accuracy (this run, complete) |
+|---|---|---|---|
+| JevBench | **231/231** | 83.45% / 79.86% on 139 items | **68.40%** on all 231 |
+| jabr-v2 | **944/944** | 88.89% / 87.08% on 387 items | **84.53%** on all 944 |
+
+Read honestly: JevBench's complete number is meaningfully lower than the subset number -- the items that were previously unattempted (all `noul`/`score`) are, on this evidence, genuinely harder for the model than the `choice` items that made up the old subset, not an artifact of the fix. jabr-v2's complete number is *higher* than one of its two subset numbers and close to the other -- `noul`/`score` items there don't drag the average down the same way. Both are now real, complete, and comparable in *coverage* terms to how Jev/Von's own published numbers are computed (though not in exact methodology -- JevBench's own 0-100 axis transform and Von's macro-averaging protocol are still not reproduced here; see 13a.15's own caveat, which still applies to the *methodology* even though the *coverage* gap it flagged is now closed).
+
+Evidence: `results/jevbench-decoder_vision_multischema-20260924T102456Z.manifest.json`, `results/jabr_v2-decoder_vision_multischema-20260924T102659Z.manifest.json`.
+
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
