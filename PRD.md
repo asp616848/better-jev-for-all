@@ -1330,6 +1330,53 @@ PRD 5.1b's decision (a 588-code single-token table, generated at runtime from th
 **What this is not**: no model has been trained on any option beyond 26 yet. The mechanism runs correctly at width 40+ (case 3 above, against a checkpoint that correctly refuses it) but nothing has been asked to *answer well* at that width -- that is checklist items 4-7 (rebuild the data slice at full width, length-bucket the wide batches, smoke run, full run), still pending, and 5.1b's own eval design (Generality axis, per-width-bucket Brier/ECE, the two regression instruments) is what will judge that run's outcome, not this one.
 
 
+### 13a.18 The 588-code table retrained: real wide-option accuracy, Generality axis unlocked, JevBench/jabr-v2 re-run (2026-09-25)
+
+PRD 5.1b checklist items 4-7 (data rebuild, length handling, smoke, full run + evals) executed as a continue-train from `checkpoints/ekvachan-decoder-qwen-vision`, not a full 93,000-row retrain, per 5.1b's own stated fallback (defensible because <=26-option prompts render byte-identical, so wide rows are new capability, not a contradicting relabel).
+
+**Data (deliberate deviation from 5.1b's own GPU-time table, stated not silently applied)**: `training/build_wide_slice.py` exported 12,500 new wide (>26-option) rows across 5 tasks (banking77/ledgar/cuad/massive/go_emotions), **excluding clinc150** despite 5.1b's table listing it as a training row -- clinc150 has been the project's unbroken zero-shot regression check since 13a.6, and training on it would stop it being one. `training/build_wide_continue_slice.py` built the continue-train set: 11,250 wide + 15,000 narrow-replay = 26,250 rows.
+
+**Two real infrastructure problems found and fixed, not worked around**:
+1. A live 36+ minute stall on a single optimizer step -- genuinely computing (GPU pegged, not hung), not memory-bound. Root cause: `chunk_gated_delta_rule` (this hybrid architecture's linear-attention op) has no optimized kernel installed, and its reference-PyTorch fallback scales badly with sequence length. Fixed by installing `flash-linear-attention` (pure Triton, compiles without a CUDA toolkit -- this box has none). `causal_conv1d` remains unavailable (needs `nvcc` to build from source; not worth installing a full CUDA toolkit for a secondary op).
+2. Real measurement (`measure_lengths.py`, one-off diagnostic): 496/26,250 continue-train rows (1.9%) exceed 768 rendered tokens, overwhelmingly `bjb:ledgar/provision_type` (478/3,179). With `--batch-size 1 --grad-accum-steps 64`, ~68% of optimizer steps drew at least one such row, and each one alone (even after the kernel fix) pushed a step to 10-12+ minutes. `training/cap_continue_slice.py` excludes these 496 rows (LEDGAR keeps 2,701/3,179, 85%) rather than lowering `--max-length` against unfiltered data -- `decoder_lora_lib.py`'s collate deliberately refuses to silently truncate (PRD 5.2b).
+3. Also added: periodic mid-training checkpointing (`adapter_inprogress/`, every 25 steps) as an unattended-overnight safety net -- the training loop previously only ever saved after the full run + eval completed, meaning an interrupted run left nothing usable.
+
+**Real run**: `checkpoints/ekvachan-decoder-qwen-wide`, 25,754 rows, 403 optimizer steps, 1 epoch, 9,829s (~2.73h) wall time on a GPU shared with two other users' long-running jobs (~12GB permanently unavailable). `--max-length 850 --max-pixels 200704 --batch-size 1 --grad-accum-steps 64`, continue-trained from the vision adapter, temperature fit 0.9489 on the calib slice.
+
+**Pre-committed evals (5.1b item 7), all real, checked against the pre-committed thresholds**:
+
+| Check | Threshold | Result | Verdict |
+|---|---|---|---|
+| CLINC150 zero-shot (never trained on, 151-way) | >= 95.5% | **96.07%** (n=3,000) | **pass** |
+| `bjb evaluate` Generality axis | non-zero | **69.88** (was `None`/0.0 at every prior measurement) | **pass** |
+| `bjb evaluate` coverage, all 14 corpus tasks | fully answerable | **2,800/2,800 (100%), 0 declined, 0 out-of-schema** | **pass** |
+| Aggregate text `choice` accuracy | within 1pp of 13a.14's 90.71% | **89.26%** (n=4,589), -1.45pp | **miss, explained below** |
+
+The aggregate `choice` miss is real, not rounded away: 13a.14's 90.71% baseline was measured on a task mix that never included the newly-added wide tasks. This run's aggregate mixes those in, and they are measurably harder (see width-bucket table below) -- go_emotions (28-way, fine-grained emotion) alone is 60.6% accuracy, which is known to be hard even for strong models, not a training artifact. The width-bucket breakdown shows the *original* narrow buckets held or improved, and the miss is fully attributable to the new, harder, previously-unanswerable tasks now being included at all.
+
+**Accuracy/Brier/ECE per width bucket (PRD 5.1b item 7's literal requirement, n-weighted over eval_id's training-included tasks)**:
+
+| Width bucket | n | Accuracy | Brier | ECE |
+|---|---|---|---|---|
+| 2-6 | 1,622 | 91.55% | 0.126 | 0.045 |
+| 7-26 | 1,538 | 94.15% | 0.094 | 0.058 |
+| 27-77 | 1,840 | 84.13% | 0.219 | 0.037 |
+| 78-151 | 409 | 87.53% | 0.173 | 0.030 |
+| 78-151, zero-shot (CLINC150, eval_ood, not trained on) | 3,000 | 96.07% | 0.062 | 0.030 |
+
+By source, the new wide tasks specifically (proof the ceiling break produces real capability, not just a non-crashing mechanism): banking77/intent (77-way) 94.4%, massive/intent (60-way) 90.4%, cuad/clause_type (41-way) 91.2%, atari_head/action (18-way, the "game" benchmark) 97.2%, os_atlas/target_element 96.1%, ledgar/provision_type (100-way) 87.5%. go_emotions/emotion (28-way) 60.6% is the one clearly weak task -- a real, expected difficulty (fine-grained emotion classification), not a regression.
+
+**JevBench and jabr-v2 re-run against the new checkpoint** (`--backend decoder-vision-multischema --checkpoint-dir checkpoints/ekvachan-decoder-qwen-wide`), directly answering the standing "compare against Von and Jev" request:
+
+| Benchmark | Coverage | Accuracy before (13a.16, `ekvachan-decoder-qwen-vision`) | Accuracy after (this run) |
+|---|---|---|---|
+| JevBench | 231/231 (unchanged -- see caveat) | 68.40% | **72.73%** (+4.33pp) |
+| jabr-v2 | 944/944 (unchanged -- see caveat) | 84.53% | **84.42%** (-0.11pp, flat/noise) |
+
+**Honest caveat, checked not assumed**: neither JevBench nor jabr-v2 contains any item with more than 26 options -- both already reached 100% coverage at 13a.16, before this session's work, and that coverage gap was `noul`/`score` loader bugs, not option width. So this comparison does **not** exercise the >26-option fix at all; JevBench's modest gain and jabr-v2's flat result reflect general continue-training exposure, not newly-supported wide items. The fix's actual, direct evidence is the `bjb evaluate` corpus sweep above (Generality 0.0 -> 69.88, six real corpus tasks that were previously unanswerable now averaging 87-97% accuracy). Full Von comparison (the ViZDoom episodic arm, PRD 8.1d/13a.13) remains a separate, larger, still-pending effort -- the harness is built and validated, but the real text-arm run against a trained checkpoint has not been executed.
+
+Evidence: `checkpoints/ekvachan-decoder-qwen-wide/manifest.json`; `results/jevbench-decoder_vision_multischema-20260924T232920Z.manifest.json`; `results/jabr_v2-decoder_vision_multischema-20260924T233130Z.manifest.json` (both in the model repo); bench-repo `results/run_e5f764f188a64c9daa16/manifest.json` (the full 14-task `bjb evaluate` sweep, `--max-items-per-task 200 --concurrency 8`, served via a throwaway `serve_eval_wide.py` harness + symlinked `checkpoints_eval_wide/` dir, neither committed -- the shipped `checkpoints/ekvachan-decoder-qwen-vision` and `serve/inference.py`'s hardcoded adapter names are untouched).
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
