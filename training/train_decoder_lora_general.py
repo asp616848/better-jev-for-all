@@ -89,7 +89,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from datasets import load_from_disk
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model
 from torch.utils.data import DataLoader, Subset
 from transformers import AutoModelForImageTextToText, AutoProcessor, get_linear_schedule_with_warmup
 
@@ -162,6 +162,7 @@ def main():
                      "truncation=True mechanism instead of this script's own no-truncate-fail-loud "
                      "default. Exists for exactly one caller: a regression check that has to hold the "
                      "truncation policy fixed so the only variable that changes is the refactor itself.")
+    ap.add_argument("--init-adapter", default=None, help="path to an existing checkpoint dir (with an adapter/ subdir) to continue-train from, instead of a fresh LoRA off --base-model. PRD 5.1b continue-train fallback: reuses an already-trained adapter's weights as the starting point rather than retraining from scratch.")
     ap.add_argument("--run-note", default="", help="free-text note written into the manifest, e.g. "
                      "'text-only regression check against 13a.10'")
     args = ap.parse_args()
@@ -226,7 +227,13 @@ def main():
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(model, lora_config)
+    if args.init_adapter:
+        init_adapter_dir = Path(args.init_adapter) / "adapter"
+        assert init_adapter_dir.exists(), f"--init-adapter {args.init_adapter}: no adapter/ subdir found"
+        model = PeftModel.from_pretrained(model, str(init_adapter_dir), is_trainable=True)
+        print(f"continue-training from existing adapter: {init_adapter_dir}")
+    else:
+        model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     lora_mods = assert_vision_tower_frozen(model)
     print(f"vision-tower-freeze assertion passed: {len(lora_mods)} LoRA modules, none in model.visual")
@@ -276,6 +283,15 @@ def main():
                     avg_loss = running_loss / max(1, running_loss_count)
                     print(f"epoch {epoch} step {step}/{total_steps} | loss {avg_loss:.4f} | {elapsed:.0f}s")
                     running_loss, running_loss_count = 0.0, 0
+                if step % 25 == 0:
+                    # unattended-overnight safety net: an unfinished run should still leave a
+                    # usable adapter behind. Separate dir from the final output -- this one
+                    # skips calibration/eval, it's a recovery artifact, not the validated result.
+                    inprogress_dir = Path(args.output_dir) / "adapter_inprogress"
+                    inprogress_dir.mkdir(parents=True, exist_ok=True)
+                    model.save_pretrained(str(inprogress_dir))
+                    processor.save_pretrained(str(inprogress_dir))
+                    print(f"[periodic checkpoint] saved adapter_inprogress at step {step}/{total_steps}")
         print(f"=== epoch {epoch} done, {time.time()-start_time:.0f}s elapsed ===")
 
     output_dir = Path(args.output_dir)
@@ -342,6 +358,7 @@ def main():
         "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval -- regression check: does this data mix "
                           "hurt choice generalization relative to the prior lineage's own numbers?",
         "run_note": args.run_note,
+        "init_adapter": args.init_adapter,
         "skipped_oom_batches": skipped_oom,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "total_train_seconds": train_seconds,
