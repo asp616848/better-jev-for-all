@@ -13,20 +13,33 @@ DEFAULT_TIMEOUT_S = 30.0
 class Question:
     """One typed question in a /v1/systemone request.
 
-    Mirrors `serve.server.Question` exactly: `type` is one of "choice",
-    "score", "noul" per the wire contract (PRD.md Section 1.2/6.1).
+    Mirrors `serve.server.Question`: `type` is one of "choice", "score",
+    "noul" per the wire contract (PRD.md Section 1.2/6.1). As of 2026-09-24
+    (PRD.md 5.2b / 14 Q4) all three primitives return a real answer against
+    the server's default routing model, any 2-26 option/level count (PRD
+    13a.5's ceiling) -- not just one fixed schema.
 
-    Today's Phase 1 reference server only returns a real answer for
-    `type="choice"` with `options == ["entailment", "neutral",
-    "contradiction"]`; every other combination (any `score`/`noul`
-    question, or a `choice` with different options) currently raises
-    HTTP 501. See the package docstring and PRD.md Section 10a / 13a.3.
+    `image`: optional base64-encoded image (a bare base64 string, or a
+    `data:<mime>;base64,...` data URI -- both accepted). Valid on any
+    primitive; a request that sets it is routed server-side to the
+    vision-capable adapter and returns HTTP 501 if that checkpoint hasn't
+    finished training yet, or HTTP 422 if the image doesn't decode. See
+    `serve/server.py`'s `Question.image` docstring for the exact transport
+    and size constraints.
+
+    One thing still genuinely unresolved server-side, not this SDK's
+    concern to paper over: a plain *text* request's adapter choice is an
+    explicit, open server config value (`EKVACHAN_TEXT_ADAPTER`) pending a
+    regression check -- an unconfigured server returns HTTP 500 for any
+    text-only request until that's set. See `serve/inference.py`'s module
+    docstring.
     """
 
     type: str
     instructions: Optional[str] = None
     options: Optional[List[str]] = None
     levels: Optional[List[str]] = None
+    image: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {"type": self.type}
@@ -36,6 +49,8 @@ class Question:
             d["options"] = self.options
         if self.levels is not None:
             d["levels"] = self.levels
+        if self.image is not None:
+            d["image"] = self.image
         return d
 
 
@@ -72,10 +87,14 @@ class EkVachanAPIError(Exception):
     """Raised when the server returns a non-2xx response.
 
     `status_code` is commonly:
-      - 501: primitive/option-set not implemented by the current checkpoint
-        (the expected outcome for anything but `choice` with
-        options == ["entailment", "neutral", "contradiction"] today).
-      - 422: malformed request (e.g. a `choice` question missing `options`).
+      - 501: option/level count out of the 2-26 range, or an image-bearing
+        request before the vision checkpoint has finished training.
+      - 422: malformed request (e.g. a `choice` question missing `options`,
+        a `score` question missing `levels`, or an `image` field that
+        doesn't decode).
+      - 500: the server's text-adapter routing config isn't set yet (see
+        `Question`'s docstring) — a server misconfiguration, not a bad
+        request.
     """
 
     def __init__(self, status_code: int, message: str):
@@ -108,10 +127,12 @@ class EkVachanClient:
         >>> response.results["nli"]["choice"]
         'entailment'
 
-    Only this one question shape (`choice` over exactly
-    `["entailment", "neutral", "contradiction"]`) will succeed against
-    today's Phase 1 checkpoint; anything else raises EkVachanAPIError with
-    status_code == 501. See the package docstring for why.
+    As of 2026-09-24 (PRD.md 5.2b / 14 Q4) the default server model answers
+    `choice` (any 2-26 options), `noul` (bare `P(Yes)` float), and `score`
+    (probability-weighted level position) — not just one fixed schema. See
+    `Question`'s own docstring for the two things that can still legitimately
+    fail: an unconfigured server's text-adapter routing (HTTP 500), and an
+    image-bearing request before the vision checkpoint has landed (HTTP 501).
     """
 
     def __init__(self, base_url: str, timeout: float = DEFAULT_TIMEOUT_S):
@@ -148,20 +169,70 @@ class EkVachanClient:
         state: str,
         options: List[str],
         instructions: Optional[str] = None,
+        image: Optional[str] = None,
         key: str = "choice",
         model: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Convenience wrapper for the single most common case today: one
-        `choice` question. Returns just that question's result dict, e.g.
-        {"choice": "entailment", "probabilities": {...}, "confidence": 0.98}.
-
-        Only options == ["entailment", "neutral", "contradiction"] will
-        succeed against the Phase 1 checkpoint; any other option list
-        raises EkVachanAPIError(status_code=501).
+        """Convenience wrapper for a single `choice` question. Returns just
+        that question's result dict, e.g. {"choice": "entailment",
+        "probabilities": {...}, "confidence": 0.98}. `options` may be any
+        2-26 item list (PRD.md 13a.5's ceiling) against today's default
+        server model — no longer restricted to one fixed schema. Pass
+        `image` (base64, see `Question`'s docstring) to route this question
+        to the vision-capable adapter.
         """
         response = self.system_one(
             state=state,
-            questions={key: Question(type="choice", instructions=instructions, options=options)},
+            questions={
+                key: Question(type="choice", instructions=instructions, options=options, image=image)
+            },
+            model=model,
+        )
+        return response.results[key]
+
+    def noul(
+        self,
+        state: str,
+        instructions: Optional[str] = None,
+        image: Optional[str] = None,
+        key: str = "noul",
+        model: Optional[str] = None,
+    ) -> float:
+        """Convenience wrapper for a single `noul` (yes/no) question. Returns
+        the bare `P(Yes)` float per PRD.md Section 1.2's wire contract — not
+        a dict, matching the server's actual response shape for this
+        primitive exactly.
+        """
+        response = self.system_one(
+            state=state,
+            questions={key: Question(type="noul", instructions=instructions, image=image)},
+            model=model,
+        )
+        return response.results[key]
+
+    def score(
+        self,
+        state: str,
+        levels: List[str],
+        instructions: Optional[str] = None,
+        image: Optional[str] = None,
+        key: str = "score",
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Convenience wrapper for a single `score` question. `levels` is
+        sent, and answered, in exactly the order given — the server never
+        shuffles or sorts it (an ordinal `score` scale's semantics depend on
+        that order; see `serve/inference.py`'s `RoutingDecoderModel.
+        predict_score` docstring for why). Returns
+        {"score": float, "probabilities": {...}, "confidence": float} where
+        `score` is the probability-weighted level position, not the argmax
+        index — it can land between levels.
+        """
+        response = self.system_one(
+            state=state,
+            questions={
+                key: Question(type="score", instructions=instructions, levels=levels, image=image)
+            },
             model=model,
         )
         return response.results[key]
