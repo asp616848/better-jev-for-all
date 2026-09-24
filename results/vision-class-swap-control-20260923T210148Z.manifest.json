@@ -1,0 +1,94 @@
+{
+  "purpose": "PRD 5.2b step 0 control run -- is the CausalLM -> ImageTextToText model-class swap neutral on a text-only eval, with no retraining and no vision data?",
+  "base_model": "Qwen/Qwen3.5-4B",
+  "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+  "src_adapter": "/data/interns/studentiotlab/ekvachan/repo/checkpoints/ekvachan-decoder-qwen-benchcorpus/adapter",
+  "remapped_adapter": "/data/interns/studentiotlab/ekvachan/repo/checkpoints/ekvachan-decoder-qwen-benchcorpus-vlclass-remap/adapter",
+  "remap_stats": {
+    "n_keys": 256,
+    "n_remapped": 256
+  },
+  "n_lora_modules_after_remap": 128,
+  "reference_manifest": "/data/interns/studentiotlab/ekvachan/repo/checkpoints/ekvachan-decoder-qwen-benchcorpus/manifest.json",
+  "reference_run": "13a.10 (train_decoder_lora_benchcorpus.py, AutoModelForCausalLM)",
+  "reference_eval_id_raw_report": {
+    "n": 3325,
+    "accuracy": 0.8493233082706767,
+    "brier": 0.19761618971824646,
+    "ece": 0.011197979423336522
+  },
+  "reference_eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.9676666666666667,
+    "brier": 0.05685098096728325,
+    "ece": 0.03203255621592204
+  },
+  "this_run_temperature": 1.0059764460390523,
+  "this_run_eval_id_raw_report": {
+    "n": 3325,
+    "accuracy": 0.8493233082706767,
+    "brier": 0.19761618971824646,
+    "ece": 0.011197979423336522
+  },
+  "this_run_eval_id_calibrated_report": {
+    "n": 3325,
+    "accuracy": 0.8493233082706767,
+    "brier": 0.19758567214012146,
+    "ece": 0.010898519256957498
+  },
+  "this_run_eval_id_raw_by_question_type": {
+    "choice": {
+      "n": 2499,
+      "accuracy": 0.8303321328531412,
+      "brier": 0.21752750873565674,
+      "ece": 0.015703245120890004
+    },
+    "noul": {
+      "n": 553,
+      "accuracy": 0.9547920433996383,
+      "brier": 0.06713342666625977,
+      "ece": 0.016592933515096886
+    },
+    "score": {
+      "n": 273,
+      "accuracy": 0.8095238095238095,
+      "brier": 0.2796623706817627,
+      "ece": 0.04500892419954797
+    }
+  },
+  "this_run_eval_ood_raw_report": {
+    "n": 3000,
+    "accuracy": 0.9676666666666667,
+    "brier": 0.05685098096728325,
+    "ece": 0.03203255621592204
+  },
+  "this_run_eval_ood_raw_by_source": {
+    "clinc150_oos_small_wide": {
+      "n": 3000,
+      "accuracy": 0.9676666666666667,
+      "brier": 0.05685098096728325,
+      "ece": 0.03203255621592204
+    }
+  },
+  "eval_id_delta_vs_reference": {
+    "accuracy": 0.0,
+    "brier": 0.0,
+    "ece": 0.0
+  },
+  "eval_ood_delta_vs_reference": {
+    "accuracy": 0.0,
+    "brier": 0.0,
+    "ece": 0.0
+  },
+  "reproduced_within_0.5pp_accuracy": true,
+  "truncation_audit": {
+    "max_length": 384,
+    "n_batches_total": 969,
+    "n_batches_over_budget": 260,
+    "eval_batch_size": 8,
+    "rows_audited": 7750,
+    "note": "Counted by running the new no-truncate collate over every eval_id+eval_ood batch and catching the RuntimeError it raises when a batch's untruncated sequence length exceeds --max-length. 13a.10's own script used truncation=True and silently cut these batches instead of erroring -- this is a real, previously-undetected property of the frozen 13a.10 pipeline, found as a side effect of building this control run, not something this control run set out to measure."
+  },
+  "eval_seconds": 567.8909823894501,
+  "timestamp_utc": "2026-09-23T21:01:48Z"
+}

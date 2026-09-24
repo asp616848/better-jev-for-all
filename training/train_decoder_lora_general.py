@@ -1,0 +1,345 @@
+"""
+The general decoder-LoRA training entrypoint for `ekvachan-base` /
+`ekvachan-vision` going forward. Replaces forking a sixth near-duplicate
+script (`train_decoder_lora_vision.py`, as PRD 5.2b originally sketched it)
+with one script that handles text-only and vision-bearing data through the
+same code path, by explicit owner instruction on 2026-09-24: "try to keep
+things general to vision or non-vision model for your changes."
+
+**Why this is a genuine architecture decision, not just a rename.** The five
+scripts before this one (`train_decoder_lora.py` -> `_multischema` ->
+`_wideschema` -> `_primitives` -> `_benchcorpus`) are ~90% byte-identical --
+each fork existed to keep an already-published result (13a.1-13a.10)
+reproducible from its own frozen code while one real change was made. That
+policy was right for scripts that were each proving a specific thing.
+PRD 5.2b's probe closed the open question this lineage was working through:
+Qwen3.5-4B's vision path is mechanically proven (config, chat template,
+processor, LoRA target_modules, the restricted-logit read itself -- all
+verified end to end, see `training/probe_vision_path.py`), so there is no
+longer a "does this work" question left to fork over. What's left is a
+software-engineering question -- text and vision data, one training script --
+and forking a sixth copy to answer it would just be more of the same 90%
+duplication the owner is asking to stop accumulating. The shared mechanism
+(masking, OOM-skip, temperature fit, `_report_by_key`, the letter-token
+assertion, left-padding index math) now lives in `training/decoder_lora_lib.py`;
+this script is the orchestration layer on top of it.
+
+**What "general" means concretely, four points**:
+
+1. **One model class for both cases, always.** `AutoModelForImageTextToText`
+   (-> `Qwen3_5ForConditionalGeneration`), never `AutoModelForCausalLM`. This
+   is not a vision-only special case: PRD 5.2b measured the fixed cost of the
+   VL class on a text-only request at 333.5M frozen vision-tower params
+   (0.67 GB bf16, never touched -- a text-only row emits no `pixel_values` and
+   the vision tower is frozen by LoRA target_modules name-mismatch, asserted
+   in `decoder_lora_lib.assert_vision_tower_frozen()`). Paying that once,
+   always, is cheaper and simpler than branching model classes depending on
+   what's in a given data slice -- see PRD 5.2b's own reasoning for why
+   `ekvachan-vision` is "a capability of the base tier, not a fourth model."
+2. **One processor, not tokenizer-vs-processor branching.** `AutoProcessor`
+   handles a text-only row identically to how `AutoTokenizer` did (verified in
+   the probe: no `pixel_values` emitted, same input_ids for the same string).
+3. **Auto-detected `max-length`/`max-pixels` defaults, not a vision flag the
+   caller must remember.** If any row in the loaded train split carries an
+   `images` field, defaults shift to PRD 5.2b's recommended
+   `--max-length 768` / `max_pixels=256*28*28` (caps any screenshot at 180
+   tokens) and the shared-GPU free-VRAM guard raises from 10 GB to 14 GB.
+   Purely text data (no `images` column at all, or an empty one on every row --
+   e.g. `data/processed/benchcorpus_slice`, unchanged) keeps the prior
+   384/10 GB defaults. Every default is still a `--flag` the caller can
+   override explicitly.
+4. **No truncation, ever** -- `decoder_lora_lib.make_collate()` pads to the
+   batch's longest row and raises loudly if that exceeds `--max-length`,
+   rather than truncating silently. PRD 5.2b names silent truncation as "the
+   failure mode most likely to waste a night of GPU time on this task."
+
+**The regression check this script owes the project** (dev-guidelines rule 3
+-- verify, don't assume): run this script against the exact same
+`benchcorpus_slice` data `train_decoder_lora_benchcorpus.py` trains on, with
+no vision rows present, and confirm the numbers land in the same neighborhood
+as 13a.10's real published report. That run and its real manifest are
+referenced from PRD 13a (search "13a.11") -- re-derive from the manifest
+path there, don't trust this paragraph.
+
+Everything else -- the shuffled-vs-ordinal option order, `labels[:,
+last_col]` masking, the OOM-skip loop, temperature fitting on a calibration
+split, `_report_by_key` -- is unchanged, imported from `decoder_lora_lib`.
+
+Run (text-only data, e.g. the benchcorpus slice):
+    uv run python3 -u -m training.train_decoder_lora_general \\
+        --data-dir data/processed/benchcorpus_slice \\
+        --output-dir checkpoints/<name> \\
+        --grad-checkpointing --batch-size 4 --grad-accum-steps 16
+
+Run (vision-bearing data, e.g. a slice from build_vision_slice.py):
+    uv run python3 -u -m training.train_decoder_lora_general \\
+        --data-dir data/processed/<vision_slice> \\
+        --output-dir checkpoints/<name> \\
+        --grad-checkpointing --batch-size 4 --grad-accum-steps 16
+    # --max-length/--max-pixels/--min-free-vram-gb auto-shift to the vision
+    # defaults the moment the loaded train split has any `images` rows.
+"""
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from datasets import load_from_disk
+from peft import LoraConfig, get_peft_model
+from torch.utils.data import DataLoader, Subset
+from transformers import AutoModelForImageTextToText, AutoProcessor, get_linear_schedule_with_warmup
+
+from training.decoder_lora_lib import (
+    MAX_OPTIONS,
+    PromptDataset,
+    assert_letter_tokens,
+    assert_vision_tower_frozen,
+    evaluate,
+    fit_temperature,
+    full_report,
+    make_collate,
+    report_by_key,
+    strip_batch_extras,
+)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+TEXT_ONLY_MAX_LENGTH = 384
+TEXT_ONLY_MIN_FREE_VRAM_GB = 10
+VISION_MAX_LENGTH = 768
+VISION_MAX_PIXELS = 256 * 28 * 28  # PRD 5.2b: caps any screenshot at 180 image tokens
+VISION_MIN_FREE_VRAM_GB = 14
+
+
+def _split_has_images(ds) -> bool:
+    if "images" not in ds.column_names:
+        return False
+    # A column scan, not a full materialize -- cheap even at 62k rows, and it's
+    # the one honest way to answer "does this slice carry any vision rows" without
+    # trusting a filename or a flag the caller might forget to pass.
+    return any(bool(row) for row in ds["images"])
+
+
+def load_split(data_dir: Path, split: str, subset: int, seed: int) -> tuple[PromptDataset, bool]:
+    ds = load_from_disk(str(data_dir / split))
+    if subset:
+        ds = ds.shuffle(seed=seed).select(range(min(subset, len(ds))))
+    return PromptDataset(ds), _split_has_images(ds)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base-model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--data-dir", required=True, help="a slice dir with train/eval_id/eval_ood subdirs")
+    ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--epochs", type=int, default=1)
+    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--grad-accum-steps", type=int, default=16)
+    ap.add_argument("--eval-batch-size", type=int, default=8)
+    ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--max-length", type=int, default=None, help="default: 384 text-only, 768 if the "
+                     "loaded train split carries any vision rows (auto-detected)")
+    ap.add_argument("--max-pixels", type=int, default=None, help="AutoProcessor cap on image area; "
+                     "default: unset for text-only data, 256*28*28 if vision rows are present")
+    ap.add_argument("--min-free-vram-gb", type=float, default=None, help="default: 10 text-only, 14 vision")
+    ap.add_argument("--lora-r", type=int, default=16)
+    ap.add_argument("--lora-alpha", type=int, default=32)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--train-subset", type=int, default=0)
+    ap.add_argument("--eval-id-subset", type=int, default=0)
+    ap.add_argument("--eval-ood-subset", type=int, default=0)
+    ap.add_argument("--calib-fraction", type=float, default=0.3)
+    ap.add_argument("--grad-checkpointing", action="store_true")
+    ap.add_argument("--truncate", action="store_true", help="reproduce the five frozen scripts' old "
+                     "truncation=True mechanism instead of this script's own no-truncate-fail-loud "
+                     "default. Exists for exactly one caller: a regression check that has to hold the "
+                     "truncation policy fixed so the only variable that changes is the refactor itself.")
+    ap.add_argument("--run-note", default="", help="free-text note written into the manifest, e.g. "
+                     "'text-only regression check against 13a.10'")
+    args = ap.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"device: {device}")
+
+    data_dir = Path(args.data_dir)
+    train_pd, train_has_vision = load_split(data_dir, "train", args.train_subset, args.seed)
+    eval_id_full, eval_id_has_vision = load_split(data_dir, "eval_id", args.eval_id_subset, args.seed)
+    eval_ood_pd, eval_ood_has_vision = load_split(data_dir, "eval_ood", args.eval_ood_subset, args.seed)
+    has_vision = train_has_vision or eval_id_has_vision or eval_ood_has_vision
+
+    max_length = args.max_length or (VISION_MAX_LENGTH if has_vision else TEXT_ONLY_MAX_LENGTH)
+    max_pixels = args.max_pixels or (VISION_MAX_PIXELS if has_vision else None)
+    min_free_vram_gb = args.min_free_vram_gb or (VISION_MIN_FREE_VRAM_GB if has_vision else TEXT_ONLY_MIN_FREE_VRAM_GB)
+    print(f"auto-detected vision rows: {has_vision} -- max_length={max_length}, "
+          f"max_pixels={max_pixels}, min_free_vram_gb={min_free_vram_gb}")
+
+    if device == "cuda":
+        free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+        free_gb = free_bytes / 1e9
+        print(f"free VRAM right now: {free_gb:.1f} GB / {total_bytes/1e9:.1f} GB total")
+        if free_gb < min_free_vram_gb:
+            raise RuntimeError(f"Only {free_gb:.1f} GB free -- refusing to start on a shared GPU this tight "
+                                f"(guard: {min_free_vram_gb} GB).")
+
+    processor_kwargs = {"max_pixels": max_pixels} if max_pixels else {}
+    processor = AutoProcessor.from_pretrained(args.base_model, **processor_kwargs)
+    if processor.tokenizer.pad_token is None:
+        processor.tokenizer.pad_token = processor.tokenizer.eos_token
+    processor.tokenizer.padding_side = "left"
+
+    letter_ids = assert_letter_tokens(processor.tokenizer, args.base_model)
+    print(f"letter token ids: {dict(zip(('A', 'B', 'C'), letter_ids[:3]))}... ({len(letter_ids)} total)")
+
+    for name, pd_ds in [("train", train_pd), ("eval_id", eval_id_full), ("eval_ood", eval_ood_pd)]:
+        widths = [len(o) for o in pd_ds.ds["options"]]
+        assert min(widths) >= 2 and max(widths) <= MAX_OPTIONS, f"{name}: option-count range violates [2, {MAX_OPTIONS}]"
+
+    n_calib = int(len(eval_id_full) * args.calib_fraction)
+    calib_pd = Subset(eval_id_full, range(n_calib))
+    test_id_pd = Subset(eval_id_full, range(n_calib, len(eval_id_full)))
+    print(f"train: {len(train_pd)} | eval_id calib: {len(calib_pd)} | eval_id test: {len(test_id_pd)} | "
+          f"eval_ood: {len(eval_ood_pd)}")
+
+    model = AutoModelForImageTextToText.from_pretrained(args.base_model, dtype=torch.bfloat16, device_map=device)
+    if args.grad_checkpointing:
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
+
+    lora_config = LoraConfig(
+        r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=0.05,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+    lora_mods = assert_vision_tower_frozen(model)
+    print(f"vision-tower-freeze assertion passed: {len(lora_mods)} LoRA modules, none in model.visual")
+
+    train_collate = make_collate(processor, max_length, letter_ids, train=True, truncate=args.truncate)
+    eval_collate = make_collate(processor, max_length, letter_ids, train=False, truncate=args.truncate)
+    train_loader = DataLoader(train_pd, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate, num_workers=2)
+    calib_loader = DataLoader(calib_pd, batch_size=args.eval_batch_size, shuffle=False, collate_fn=eval_collate, num_workers=2)
+    test_id_loader = DataLoader(test_id_pd, batch_size=args.eval_batch_size, shuffle=False, collate_fn=eval_collate, num_workers=2)
+    ood_loader = DataLoader(eval_ood_pd, batch_size=args.eval_batch_size, shuffle=False, collate_fn=eval_collate, num_workers=2)
+
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, weight_decay=0.0)
+    optim_steps_per_epoch = -(-len(train_loader) // args.grad_accum_steps)
+    total_steps = optim_steps_per_epoch * args.epochs
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(0.06 * total_steps), num_training_steps=total_steps)
+
+    start_time = time.time()
+    step, skipped_oom = 0, 0
+    running_loss, running_loss_count = 0.0, 0
+    for epoch in range(args.epochs):
+        model.train()
+        optimizer.zero_grad()
+        for i, batch in enumerate(train_loader):
+            strip_batch_extras(batch)
+            batch = {k: v.to(device) for k, v in batch.items()}
+            try:
+                out = model(**batch)
+                (out.loss / args.grad_accum_steps).backward()
+            except torch.cuda.OutOfMemoryError:
+                skipped_oom += 1
+                print(f"WARNING: OOM on batch {i}, skipping (total: {skipped_oom})")
+                optimizer.zero_grad()
+                torch.cuda.empty_cache()
+                continue
+
+            running_loss += out.loss.item()
+            running_loss_count += 1
+            if (i + 1) % args.grad_accum_steps == 0 or (i + 1) == len(train_loader):
+                torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                step += 1
+                if step % 50 == 0 or step == 1 or step == total_steps:
+                    elapsed = time.time() - start_time
+                    avg_loss = running_loss / max(1, running_loss_count)
+                    print(f"epoch {epoch} step {step}/{total_steps} | loss {avg_loss:.4f} | {elapsed:.0f}s")
+                    running_loss, running_loss_count = 0.0, 0
+        print(f"=== epoch {epoch} done, {time.time()-start_time:.0f}s elapsed ===")
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    train_seconds = time.time() - start_time
+
+    calib_probs, calib_labels, _, _ = evaluate(model, calib_loader, device, letter_ids)
+    calib_logit_surrogate = np.log(np.clip(calib_probs, 1e-12, 1.0))
+    temperature = fit_temperature(calib_logit_surrogate, calib_labels)
+    print(f"fitted temperature (on eval_id calib slice only): {temperature:.4f}")
+
+    id_probs, id_labels, id_sources, id_qtypes = evaluate(model, test_id_loader, device, letter_ids)
+    id_logit_surrogate = np.log(np.clip(id_probs, 1e-12, 1.0))
+    id_calibrated_probs = F.softmax(torch.tensor(id_logit_surrogate) / temperature, dim=-1).numpy()
+
+    ood_probs, ood_labels, ood_sources, ood_qtypes = evaluate(model, ood_loader, device, letter_ids)
+
+    id_raw_report = full_report(id_probs, id_labels, MAX_OPTIONS)
+    id_calibrated_report = full_report(id_calibrated_probs, id_labels, MAX_OPTIONS)
+    ood_raw_report = full_report(ood_probs, ood_labels, MAX_OPTIONS)
+
+    id_raw_by_source = report_by_key(id_probs, id_labels, id_sources)
+    id_raw_by_qtype = report_by_key(id_probs, id_labels, id_qtypes)
+    ood_raw_by_source = report_by_key(ood_probs, ood_labels, ood_sources)
+
+    print("eval_id raw:", json.dumps(id_raw_report, indent=2))
+    print("eval_id calibrated:", json.dumps(id_calibrated_report, indent=2))
+    print("eval_id raw by source:", json.dumps(id_raw_by_source, indent=2))
+    print("eval_id raw BY QUESTION_TYPE (choice/noul/score):", json.dumps(id_raw_by_qtype, indent=2))
+    print("eval_ood raw (CLINC150 wide, choice-regression-check):", json.dumps(ood_raw_report, indent=2))
+    print("eval_ood raw by source:", json.dumps(ood_raw_by_source, indent=2))
+
+    model.save_pretrained(output_dir / "adapter")
+    processor.save_pretrained(output_dir / "adapter")
+
+    manifest = {
+        "base_model": args.base_model,
+        "architecture": "decoder-lora-restricted-logit-general",
+        "script": "training/train_decoder_lora_general.py",
+        "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+        "vision_rows_detected": has_vision,
+        "max_options": MAX_OPTIONS,
+        "max_length": max_length,
+        "max_pixels": max_pixels,
+        "truncate": args.truncate,
+        "min_free_vram_gb": min_free_vram_gb,
+        "seed": args.seed,
+        "epochs": args.epochs,
+        "lora_r": args.lora_r,
+        "lora_alpha": args.lora_alpha,
+        "n_lora_modules": len(lora_mods),
+        "train_size": len(train_pd),
+        "calib_size": len(calib_pd),
+        "eval_id_test_size": len(test_id_pd),
+        "eval_ood_size": len(eval_ood_pd),
+        "temperature": temperature,
+        "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+        "eval_id_raw_report": id_raw_report,
+        "eval_id_calibrated_report": id_calibrated_report,
+        "eval_id_raw_by_source": id_raw_by_source,
+        "eval_id_raw_by_question_type": id_raw_by_qtype,
+        "eval_ood_raw_report": ood_raw_report,
+        "eval_ood_raw_by_source": ood_raw_by_source,
+        "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval -- regression check: does this data mix "
+                          "hurt choice generalization relative to the prior lineage's own numbers?",
+        "run_note": args.run_note,
+        "skipped_oom_batches": skipped_oom,
+        "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "total_train_seconds": train_seconds,
+    }
+    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    print(f"saved to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()
