@@ -1205,6 +1205,8 @@ All harnesses built this session (13a.7's JevBench/jabr-v2, 13a.12's ScreenSpot-
 
 Evidence: `results/{jevbench,jabr_v2}-decoder_multischema-20260924T0744*/0745*.manifest.json`, `results/screenspot_v2-decoder_vision_multischema-20260924T074849Z.manifest.json`, `results/vizdoom-{defend_the_center,health_gathering}-{von,none}-decoder_vision_multischema-20260924T07*.manifest.json`.
 
+**A fourth real evaluation, in the sibling better-jev-bench repo**: `bjb evaluate` (its own scoring engine, PRD §14) ran against this same checkpoint for real -- Intelligence 42.46, Calibration 88.52, Generality **0.0**. That last number is real and diagnostic, not a failure of the run: 6 of the bench corpus's 14 real tasks (banking77 77-way, clinc150 151-way, ledgar 100-way, massive/intent 60-way, cuad/clause_type 41-way, go_emotions 28-way) exceed this project's 26-option ceiling, so the `width` family -- and Generality with it -- cannot score above zero until that gap closes. This is the first *quantified* case, on real license-clean corpus data (not a hypothetical), for 5.1a's cross-attention head or a multi-token option scheme -- concretely stronger evidence than "no real benchmark item has needed it yet" (13a.5), because now one has, six times over. See better-jev-bench's own `better-jev-bench_PRD.md` for the full writeup.
+
 
 ## 14. Open questions
 
