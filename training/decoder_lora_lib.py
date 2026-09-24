@@ -48,8 +48,17 @@ from eval.metrics import fit_temperature  # noqa: F401  (re-exported for callers
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-MAX_OPTIONS = 26  # A-Z -- unchanged since train_decoder_lora_wideschema.py
-LETTERS = [chr(ord("A") + i) for i in range(MAX_OPTIONS)]
+# PRD 5.1b: the restricted-logit mechanism's real ceiling is however many
+# single, mutually-distinct-token option identifiers the base tokenizer
+# offers -- measured (not assumed) to be 588 (A-Z, then every two-uppercase-
+# letter pair BPE encodes as one token), not 26. `MAX_OPTIONS` is a fixed
+# array-sizing constant (padding width for `order`/logit-restriction
+# tensors); the actual code *strings* can only be derived from a live
+# tokenizer, via `build_code_table()` below -- see PRD 5.1b implementation
+# checklist item 0.
+MAX_OPTIONS = 588
+
+LETTERS_AZ = [chr(ord("A") + i) for i in range(26)]  # kept only for the byte-identity check below
 
 
 def shuffled_letter_order(pair_seed: str, n_options: int) -> list[int]:
@@ -71,21 +80,28 @@ def option_order_for(ex: dict) -> list[int]:
     return shuffled_letter_order(ex["state"] + str(ex["label_idx"]) + str(n_options), n_options)
 
 
-def build_prompt_text(state: str, options: list[str], order: list[int], instructions: str) -> str:
-    """Byte-identical to every prior script's `build_prompt()`. Returns the
-    plain instruction text; the image block (if any) is prepended by the
-    caller when constructing chat `messages`, not baked in here, so this stays
-    usable for both a bare tokenizer and a processor's chat template."""
+def build_prompt_text(state: str, options: list[str], order: list[int], instructions: str,
+                       codes: list[str]) -> str:
+    """Byte-identical to every prior script's `build_prompt()` for n <= 26
+    (PRD 5.1b implementation checklist item 2 -- this is what protects the 8
+    corpus tasks that already worked from regressing on the code-table
+    change alone). For n > 26 the trailing line names a *range*
+    (`A .. FD`) rather than enumerating every code -- enumerating costs 32%
+    more tokens at width 151 (measured, PRD 5.1b) for no benefit, since the
+    options are already listed above. `codes` is the caller's own
+    `build_code_table()` result, never rebuilt here -- this function has no
+    tokenizer to derive one from."""
     n = len(options)
-    option_lines = "\n".join(f"{LETTERS[i]}) {options[order[i]]}" for i in range(n))
-    return (
-        f"{instructions}\n\n{state}\n\nOptions:\n{option_lines}\n\n"
-        f"Answer with a single letter ({'/'.join(LETTERS[:n])})."
-    )
+    option_lines = "\n".join(f"{codes[i]}) {options[order[i]]}" for i in range(n))
+    if n <= 26:
+        tail = f"Answer with a single letter ({'/'.join(codes[:n])})."
+    else:
+        tail = f"Answer with a single option code from the list above ({codes[0]} .. {codes[n-1]})."
+    return f"{instructions}\n\n{state}\n\nOptions:\n{option_lines}\n\n{tail}"
 
 
 def build_prompt_messages(state: str, options: list[str], order: list[int], instructions: str,
-                           image_path: str | None) -> list[dict]:
+                           image_path: str | None, codes: list[str]) -> list[dict]:
     """The one genuine generalization over the text-only lineage's build_prompt():
     when `image_path` is set, content becomes a list with an image block
     prepended, exactly the shape `probe_vision_path.py` verified end to end
@@ -94,7 +110,7 @@ def build_prompt_messages(state: str, options: list[str], order: list[int], inst
     case). When `image_path` is None, content is the plain string every prior
     script already produced -- verified in the same probe to render and tokenize
     identically through `AutoProcessor` as through `AutoTokenizer`."""
-    text = build_prompt_text(state, options, order, instructions)
+    text = build_prompt_text(state, options, order, instructions, codes)
     if image_path is None:
         content: Any = text
     else:
@@ -111,8 +127,9 @@ class PromptDataset(TorchDataset):
     block. A row with more than one path is a hard error, not a silent drop.
     """
 
-    def __init__(self, hf_dataset, resolve_image_root: Path | None = None):
+    def __init__(self, hf_dataset, codes: list[str], resolve_image_root: Path | None = None):
         self.ds = hf_dataset
+        self.codes = codes
         self.resolve_image_root = resolve_image_root
 
     def __len__(self):
@@ -147,7 +164,7 @@ class PromptDataset(TorchDataset):
             image_path = str(p)
 
         order = option_order_for(ex)
-        messages = build_prompt_messages(ex["state"], options, order, ex["instructions"], image_path)
+        messages = build_prompt_messages(ex["state"], options, order, ex["instructions"], image_path, self.codes)
         target_letter_idx = order.index(ex["label_idx"])
         return {
             "messages": messages,
@@ -295,6 +312,12 @@ def evaluate(model, loader, device, letter_ids: list[int]) -> tuple[np.ndarray, 
         pad_mask = col_idx >= n_options.to(restricted.device).unsqueeze(1)
         restricted = restricted.masked_fill(pad_mask, float("-inf"))
         restricted_probs = F.softmax(restricted.float(), dim=-1).cpu().numpy()
+        # PRD 5.1b caveat: Brier stays comparable across the 26->588 MAX_OPTIONS
+        # change only because pad columns are exact zeros post-softmax --
+        # asserted here, not assumed, since it's load-bearing for comparing
+        # against every prior lineage's numbers.
+        pad_mask_np = pad_mask.cpu().numpy()
+        assert np.all(restricted_probs[pad_mask_np] == 0.0), "pad columns are not exact zero after softmax"
 
         order_np = order.numpy()
         n_options_np = n_options.numpy()
@@ -322,16 +345,76 @@ def report_by_key(probs: np.ndarray, labels: np.ndarray, keys: list[str]) -> dic
     return by_key
 
 
+def build_code_table(tokenizer) -> tuple[list[str], list[int]]:
+    """PRD 5.1b: the restricted-logit mechanism's real ceiling, generated and
+    asserted at runtime rather than hardcoded -- A-Z first (so any item with
+    <=26 options gets a prompt byte-identical to the pre-5.1b mechanism, and
+    the currently-shipping checkpoint's learned behaviour is untouched), then
+    every two-uppercase-letter pair that BPE encodes as exactly one token,
+    lexicographic. Replaces `assert_letter_tokens()`; every prior caller of
+    that function now gets the first 26 entries of this table's `codes`/
+    `ids`, byte-for-byte.
+
+    Copied from `training/probe_multitoken_scheme.py`'s `build_wide_code_table()`
+    plus its context-stability checks, per PRD 5.1b implementation checklist
+    item 0: "copy the probe's checks; do not re-derive them." A tokenizer
+    change must fail loudly here, not silently mis-read -- same discipline
+    `assert_letter_tokens()` already had, widened to the pair table.
+    """
+    import itertools
+    import string
+
+    upper = list(string.ascii_uppercase)
+    pairs = ["".join(p) for p in itertools.product(upper, upper)]
+
+    def _single_token_id(s: str) -> int | None:
+        ids = tokenizer.encode(s, add_special_tokens=False)
+        return ids[0] if len(ids) == 1 else None
+
+    letter_ids = {l: _single_token_id(l) for l in upper}
+    assert all(v is not None for v in letter_ids.values()), (
+        f"A-Z is not all single tokens under this tokenizer -- the base mechanism itself is broken: {letter_ids}"
+    )
+    pair_ids = {p: _single_token_id(p) for p in pairs}
+    codes = upper + [p for p in pairs if pair_ids[p] is not None]
+    ids = [letter_ids[l] for l in upper] + [pair_ids[p] for p in pairs if pair_ids[p] is not None]
+    assert len(set(ids)) == len(ids), f"code table has a duplicate token id ({len(ids)} codes, {len(set(ids))} distinct)"
+
+    # context stability, check (a): does each code survive as its own token
+    # inside a real option line, not just standalone?
+    ctx_fail = []
+    for c, cid in zip(codes, ids):
+        line_ids = tokenizer.encode(f"Options:\n{c}) placeholder option text\n", add_special_tokens=False)
+        if cid not in line_ids:
+            ctx_fail.append(c)
+    assert not ctx_fail, f"codes fail context stability inside an option line: {ctx_fail[:16]}"
+
+    # context stability, check (b): does the answer position stay clean under
+    # the real chat template (sampled, matching the probe's own 80-code
+    # sample -- exhaustive isn't needed, this is a tokenizer property, not a
+    # per-item one)?
+    tmpl = tokenizer.apply_chat_template(
+        [{"role": "user", "content": "x"}], tokenize=False, add_generation_prompt=True, enable_thinking=False
+    )
+    base_ids = tokenizer.encode(tmpl, add_special_tokens=False)
+    ans_fail = []
+    for c, cid in list(zip(codes, ids))[:64] + list(zip(codes, ids))[-16:]:
+        cont_ids = tokenizer.encode(tmpl + c, add_special_tokens=False)
+        if cont_ids[: len(base_ids)] != base_ids or cont_ids[len(base_ids):] != [cid]:
+            ans_fail.append(c)
+    assert not ans_fail, f"codes fail answer-position stability under the real chat template: {ans_fail}"
+
+    return codes, ids
+
+
 def assert_letter_tokens(tokenizer, base_model: str) -> list[int]:
-    """Unchanged assertion from every prior script: every A-Z letter must be
-    exactly one token under this tokenizer, or the restricted-logit mechanism
-    (`logits[:, -1, letter_ids]`) is reading the wrong thing."""
-    letter_token_ids_full = [tokenizer.encode(l, add_special_tokens=False) for l in LETTERS]
-    for l, ids in zip(LETTERS, letter_token_ids_full):
-        assert len(ids) == 1, f"letter {l!r} is not a single token under {base_model}'s tokenizer: {ids}"
-    letter_ids = [ids[0] for ids in letter_token_ids_full]
-    assert len(set(letter_ids)) == len(letter_ids)
-    return letter_ids
+    """Back-compat wrapper over `build_code_table()`, kept for any caller that
+    only needs the ceiling-26 letter ids (e.g. a regression check pinned to
+    the pre-5.1b mechanism). Returns the same 26 ids `build_code_table()`'s
+    first 26 entries would."""
+    codes, ids = build_code_table(tokenizer)
+    assert codes[:26] == LETTERS_AZ, "A-Z prefix of the code table changed -- tokenizer or table construction bug"
+    return ids[:26]
 
 
 def assert_vision_tower_frozen(peft_model) -> list[str]:

@@ -25,7 +25,7 @@ Three model classes live here, on purpose, not because one replaced the last:
 
 - `RoutingDecoderModel` (added 2026-09-24, PRD.md 5.2b / 14 Q4) — what the
   live server actually serves now. Answers all three wire-contract primitives
-  (`choice`, `noul`, `score`) with 2-26 options, text or image, from **one**
+  (`choice`, `noul`, `score`) with 2-588 options (PRD 5.1b), text or image, from **one**
   base model (`AutoModelForImageTextToText`) with **hot-swappable named LoRA
   adapters** (PEFT's `set_adapter()`), not two separate loaded model copies —
   see its own docstring for the full design and the one open routing
@@ -52,7 +52,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 # Reused here rather than reimplemented, per this project's standing "don't
 # build the restricted-logit mechanism a third time" discipline.
 from benchmarks.common.backends import (
-    _assert_single_token_letters,
+    _build_code_table_for_backend,
     _build_multischema_prompt,
     _restricted_logit_result,
 )
@@ -372,9 +372,8 @@ class RoutingDecoderModel:
         if self.processor.tokenizer.pad_token is None:
             self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
 
-        self.letters = [chr(ord("A") + i) for i in range(self.max_options)]
-        self._letter_ids = _assert_single_token_letters(
-            self.processor.tokenizer, self.letters, self.base_model_name
+        self.letters, self._letter_ids = _build_code_table_for_backend(
+            self.processor.tokenizer, self.max_options, self.base_model_name
         )
 
         base = AutoModelForImageTextToText.from_pretrained(self.base_model_name, dtype=torch.bfloat16)

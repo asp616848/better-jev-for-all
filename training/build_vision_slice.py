@@ -70,7 +70,7 @@ from pathlib import Path
 from datasets import Dataset, load_from_disk
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MAX_OPTIONS = 26
+MAX_OPTIONS = 588  # PRD 5.1b -- was 26; raised so full-width wide-task rows pass this builder's own validation
 SEED = 42
 
 BENCHCORPUS_DIR = REPO_ROOT / "data" / "processed" / "benchcorpus_slice"
@@ -217,21 +217,29 @@ def _assert_within_token_budget(vision_records: list[dict], text_records: list[d
     checks every row, vision or not, with the tokenizer for text-only rows
     (cheap, no image I/O) and the processor for vision rows (as before)."""
     from transformers import AutoTokenizer, AutoProcessor
+    from training.decoder_lora_lib import build_code_table
 
-    def _row_text(r: dict) -> str:
+    def _row_text(r: dict, codes: list[str]) -> str:
+        # PRD 5.1b: use the real code table, not chr(ord("A")+j) -- that
+        # construction silently produced garbage (`[`, `\`, ...) past option
+        # 26, which is exactly the case this budget check now needs to get
+        # right for the wide-task rows.
         options = r["options"]
         n = len(options)
-        letters = [chr(ord("A") + j) for j in range(n)]
-        option_lines = "\n".join(f"{letters[j]}) {options[j]}" for j in range(n))
-        return (f"{r['instructions']}\n\n{r['state']}\n\nOptions:\n{option_lines}\n\n"
-                f"Answer with a single letter ({'/'.join(letters)}).")
+        option_lines = "\n".join(f"{codes[j]}) {options[j]}" for j in range(n))
+        if n <= 26:
+            tail = f"Answer with a single letter ({'/'.join(codes[:n])})."
+        else:
+            tail = f"Answer with a single option code from the list above ({codes[0]} .. {codes[n-1]})."
+        return f"{r['instructions']}\n\n{r['state']}\n\nOptions:\n{option_lines}\n\n{tail}"
 
     violations = []
 
     if text_records:
         tok = AutoTokenizer.from_pretrained(base_model)
+        codes, _ = build_code_table(tok)
         for r in text_records:
-            text = _row_text(r)
+            text = _row_text(r, codes)
             messages = [{"role": "user", "content": text}]
             rendered = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
             n_tokens = len(tok(rendered)["input_ids"])
@@ -241,8 +249,9 @@ def _assert_within_token_budget(vision_records: list[dict], text_records: list[d
     if vision_records:
         from PIL import Image
         proc = AutoProcessor.from_pretrained(base_model, max_pixels=max_pixels)
+        codes, _ = build_code_table(proc.tokenizer)
         for r in vision_records:
-            text = _row_text(r)
+            text = _row_text(r, codes)
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": text}]}]
             rendered = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
             img = Image.open(r["images"][0]).convert("RGB")

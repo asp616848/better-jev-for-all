@@ -96,8 +96,8 @@ from transformers import AutoModelForImageTextToText, AutoProcessor, get_linear_
 from training.decoder_lora_lib import (
     MAX_OPTIONS,
     PromptDataset,
-    assert_letter_tokens,
     assert_vision_tower_frozen,
+    build_code_table,
     evaluate,
     fit_temperature,
     full_report,
@@ -112,7 +112,7 @@ TEXT_ONLY_MAX_LENGTH = 384
 TEXT_ONLY_MIN_FREE_VRAM_GB = 10
 VISION_MAX_LENGTH = 768
 VISION_MAX_PIXELS = 256 * 28 * 28  # PRD 5.2b: caps any screenshot at 180 image tokens
-VISION_MIN_FREE_VRAM_GB = 14
+VISION_MIN_FREE_VRAM_GB = 24  # PRD 5.1b: measured peak 20.35 GB at width 151/batch 4; was 14 pre-5.1b
 
 
 def _split_has_images(ds) -> bool:
@@ -124,11 +124,14 @@ def _split_has_images(ds) -> bool:
     return any(bool(row) for row in ds["images"])
 
 
-def load_split(data_dir: Path, split: str, subset: int, seed: int) -> tuple[PromptDataset, bool]:
+def load_raw_split(data_dir: Path, split: str, subset: int, seed: int):
+    """Loads the raw HF dataset only -- codes aren't known yet at this point
+    (they need a live tokenizer), so `PromptDataset` wrapping happens later,
+    once `build_code_table()` has run."""
     ds = load_from_disk(str(data_dir / split))
     if subset:
         ds = ds.shuffle(seed=seed).select(range(min(subset, len(ds))))
-    return PromptDataset(ds), _split_has_images(ds)
+    return ds, _split_has_images(ds)
 
 
 def main():
@@ -145,7 +148,8 @@ def main():
                      "loaded train split carries any vision rows (auto-detected)")
     ap.add_argument("--max-pixels", type=int, default=None, help="AutoProcessor cap on image area; "
                      "default: unset for text-only data, 256*28*28 if vision rows are present")
-    ap.add_argument("--min-free-vram-gb", type=float, default=None, help="default: 10 text-only, 14 vision")
+    ap.add_argument("--min-free-vram-gb", type=float, default=None, help="default: 10 text-only, 24 vision "
+                     "(PRD 5.1b: raised from 14 -- measured peak 20.35 GB at width 151/batch 4)")
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--lora-alpha", type=int, default=32)
     ap.add_argument("--seed", type=int, default=42)
@@ -169,9 +173,9 @@ def main():
     print(f"device: {device}")
 
     data_dir = Path(args.data_dir)
-    train_pd, train_has_vision = load_split(data_dir, "train", args.train_subset, args.seed)
-    eval_id_full, eval_id_has_vision = load_split(data_dir, "eval_id", args.eval_id_subset, args.seed)
-    eval_ood_pd, eval_ood_has_vision = load_split(data_dir, "eval_ood", args.eval_ood_subset, args.seed)
+    train_ds, train_has_vision = load_raw_split(data_dir, "train", args.train_subset, args.seed)
+    eval_id_ds, eval_id_has_vision = load_raw_split(data_dir, "eval_id", args.eval_id_subset, args.seed)
+    eval_ood_ds, eval_ood_has_vision = load_raw_split(data_dir, "eval_ood", args.eval_ood_subset, args.seed)
     has_vision = train_has_vision or eval_id_has_vision or eval_ood_has_vision
 
     max_length = args.max_length or (VISION_MAX_LENGTH if has_vision else TEXT_ONLY_MAX_LENGTH)
@@ -194,8 +198,13 @@ def main():
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
     processor.tokenizer.padding_side = "left"
 
-    letter_ids = assert_letter_tokens(processor.tokenizer, args.base_model)
-    print(f"letter token ids: {dict(zip(('A', 'B', 'C'), letter_ids[:3]))}... ({len(letter_ids)} total)")
+    codes, letter_ids = build_code_table(processor.tokenizer)
+    print(f"code table: {len(codes)} codes, e.g. {dict(zip(codes[:3], letter_ids[:3]))} ... "
+          f"{dict(zip(codes[-3:], letter_ids[-3:]))}")
+
+    train_pd = PromptDataset(train_ds, codes)
+    eval_id_full = PromptDataset(eval_id_ds, codes)
+    eval_ood_pd = PromptDataset(eval_ood_ds, codes)
 
     for name, pd_ds in [("train", train_pd), ("eval_id", eval_id_full), ("eval_ood", eval_ood_pd)]:
         widths = [len(o) for o in pd_ds.ds["options"]]

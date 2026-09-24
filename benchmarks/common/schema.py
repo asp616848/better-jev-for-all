@@ -26,19 +26,22 @@ FIXED_CHECKPOINT_LABELS = ["entailment", "neutral", "contradiction"]
 # The decoder (Qwen3.5-4B LoRA, restricted-logit read) is architecturally not
 # fixed-width the way the encoder's classification head is: it answers a
 # `choice` question by reading the model's next-token logits restricted to a
-# small set of single-uppercase-letter tokens (A, B, C, ...), one per option,
-# masking the rest to exact -inf before softmax. That mechanism's real ceiling
-# is however many such letters exist as guaranteed single, mutually distinct
-# tokens under the base model's tokenizer -- verified (independently, on the
-# actual training server, 2026-09-23) to be all 26 of A-Z under Qwen3.5-4B's
-# tokenizer. See `training/train_decoder_lora_wideschema.py`'s `MAX_OPTIONS`
-# constant and its own runtime assertion (`assert len(ids) == 1` for every
-# letter), which re-checks this live on every training run -- that script is
-# the canonical source for this number, duplicated here as a plain literal for
+# small set of single-token option-code strings, one per option, masking the
+# rest to exact -inf before softmax. That mechanism's real ceiling is however
+# many such codes exist as guaranteed single, mutually distinct tokens under
+# the base model's tokenizer.
+#
+# PRD 13a.5 verified this at 26 (all of A-Z), and that number stood
+# unquestioned through 13a.15 -- until PRD 5.1b re-checked the premise rather
+# than the conclusion and found the real number is 588: A-Z, then every
+# two-uppercase-letter pair (AA, AB, ... ZZ) that also happens to be a single
+# token under this tokenizer's BPE merges (562 of 676 are). See
+# `training/decoder_lora_lib.py`'s `build_code_table()`, which derives and
+# asserts this table at runtime from a live tokenizer -- that function is the
+# canonical source for this number, duplicated here as a plain literal for
 # exactly the reason FIXED_CHECKPOINT_LABELS above is: filtering benchmark
 # items by option count is cheap, dataset-only work that must not require
-# torch/transformers/peft to be installed, and that script isn't even vendored
-# on this branch (it landed via a parallel workstream -- PRD.md 13a.5).
+# torch/transformers/peft to be installed.
 #
 # Unlike FIXED_CHECKPOINT_LABELS, this is only a *default* cap used when
 # filtering happens before any backend is instantiated (this module's whole
@@ -46,4 +49,4 @@ FIXED_CHECKPOINT_LABELS = ["entailment", "neutral", "contradiction"]
 # checkpoint's `max_options` from its manifest, and benchmarks/common/
 # harness.py cross-checks that against whatever cap was used to filter before
 # trusting the run -- same discipline as the FIXED_CHECKPOINT_LABELS check.
-DECODER_MULTISCHEMA_MAX_OPTIONS = 26
+DECODER_MULTISCHEMA_MAX_OPTIONS = 588

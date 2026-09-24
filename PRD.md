@@ -1308,6 +1308,27 @@ Read honestly: JevBench's complete number is meaningfully lower than the subset 
 
 Evidence: `results/jevbench-decoder_vision_multischema-20260924T102456Z.manifest.json`, `results/jabr_v2-decoder_vision_multischema-20260924T102659Z.manifest.json`.
 
+### 13a.17 The 588-code table implemented and live end to end (mechanism only -- not yet retrained) (2026-09-24)
+
+PRD 5.1b's decision (a 588-code single-token table, generated at runtime from the tokenizer, no mechanism change) implemented against its own 9-item checklist, items 0-3 and 8. Every call site that used to hand-roll `[chr(ord("A")+i) for i in range(n)]` -- which silently produces garbage past option 26 (`[`, `\`, `]`, ...) -- now derives its table from one shared function:
+
+- **`training/decoder_lora_lib.py`**: `build_code_table(tokenizer) -> (codes, ids)` replaces the old `LETTERS` constant, copying the probe's own single-token / mutual-distinctness / context-stability assertions verbatim (checklist item 0: "copy the probe's checks; do not re-derive them") rather than trusting the prior probe run. `MAX_OPTIONS` 26 -> 588. `build_prompt_text()` takes `codes` explicitly now (no module global); the answer line is width-conditional -- `n <= 26` renders **byte-identical** to the pre-5.1b mechanism (verified below), `n > 26` names a range (`A .. FD`) instead of enumerating. `evaluate()` gained a runtime assertion that pad columns are exact zero post-softmax -- the thing 5.1b's own Brier-comparability caveat said must be asserted, not assumed. `assert_letter_tokens()` kept as a thin back-compat wrapper for any caller still pinned to the 26-letter mechanism.
+- **`benchmarks/common/backends.py`**: `_assert_single_token_letters()` replaced by `_build_code_table_for_backend(tokenizer, max_options, base_model_name)`, which calls the shared `build_code_table()` and slices to *this checkpoint's own* `max_options` from its manifest -- a checkpoint trained before 5.1b still correctly reports and enforces 26, not 588 (verified below: the live vision checkpoint's manifest says 26 and the backend respects it exactly). `_build_multischema_prompt()`'s answer line is width-conditional, same rule as `decoder_lora_lib`.
+- **`serve/inference.py`**: `RoutingDecoderModel` now builds its code table the same shared way; `serve/server.py`'s docstring updated from "2-26" to "2-588".
+- **`training/build_vision_slice.py`**: its per-row token-budget assertion used the same broken `chr(ord("A")+j)` construction for length-estimation purposes -- fixed to use the real code table (via a tokenizer it already loads), so the budget check is accurate for wide rows too, not just an undercount past option 26.
+- **`benchmarks/common/schema.py`**: `DECODER_MULTISCHEMA_MAX_OPTIONS` 26 -> 588, comment rewritten to point at 5.1b instead of the superseded 13a.5 ceiling.
+- **`training/train_decoder_lora_general.py`**: threads `codes` from `build_code_table()` through `PromptDataset`; `VISION_MIN_FREE_VRAM_GB` 14 -> 24 (5.1b: measured peak 20.35 GB at width 151/batch 4).
+- The five frozen 13a.1-13a.10 scripts (`train_decoder_lora_wideschema.py` and siblings) are deliberately **untouched** -- PRD's own fork-don't-edit policy for already-published results.
+
+**Verified real, not trusted from the diff** (dev-guidelines rule 3):
+
+1. `build_code_table()` run live against `Qwen/Qwen3.5-4B`'s real tokenizer on this server reproduces the probe's exact finding: 588 codes, A-Z prefix intact, `ZZ` last.
+2. Byte-identity check: `build_prompt_text()` at n=3 produces a string **identical** to the pre-5.1b hand-rolled formula. At n=60 it correctly renders a range-style answer line (`A .. BH`).
+3. Live end-to-end run through `DecoderVisionMultischemaBackend` against the real, already-trained `checkpoints/ekvachan-decoder-qwen-vision` checkpoint: the checkpoint's own manifest correctly reports and enforces `max_options=26` (it predates 5.1b) -- an n=40 request is cleanly refused, not silently mis-served. A real 3-way NLI item still answers correctly (`entailment`, 94.8% confidence) -- **no regression** from the code-table change on the currently-shipping checkpoint.
+4. Live end-to-end run through `serve.inference.RoutingDecoderModel` (`uv run python3 -m serve.validate_routing_model`): `describe()` now reports `max_options: 588`; `choice`, `noul`, `score`, and image-routed `choice` all ran successfully with plausible outputs. Manifest: `results/routing-model-validation-20260924T110202Z.manifest.json`.
+
+**What this is not**: no model has been trained on any option beyond 26 yet. The mechanism runs correctly at width 40+ (case 3 above, against a checkpoint that correctly refuses it) but nothing has been asked to *answer well* at that width -- that is checklist items 4-7 (rebuild the data slice at full width, length-bucket the wide batches, smoke run, full run), still pending, and 5.1b's own eval design (Generality axis, per-width-bucket Brier/ECE, the two regression instruments) is what will judge that run's outcome, not this one.
+
 
 ## 14. Open questions
 

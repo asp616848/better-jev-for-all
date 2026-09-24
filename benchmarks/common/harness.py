@@ -139,7 +139,7 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
                          "override the option-count cap used both to filter items before any "
                          "backend is built and (for the real backends) to cross-check against the "
                          "loaded checkpoint's own manifest['max_options']. Default: "
-                         "benchmarks.common.schema.DECODER_MULTISCHEMA_MAX_OPTIONS (26).")
+                         "benchmarks.common.schema.DECODER_MULTISCHEMA_MAX_OPTIONS (588, PRD 5.1b).")
     p.add_argument("--max-pixels", type=int, default=None,
                     help="decoder-vision-multischema only: AutoProcessor cap on image area, passed "
                          "straight through to it. Default: the checkpoint manifest's own recorded "

@@ -11,7 +11,7 @@ Updated 2026-09-24 (PRD.md 5.2b / 14 Q4): serves `serve.inference.
 RoutingDecoderModel` by default — one base model, hot-swappable named LoRA
 adapters, all three primitives now answered for real:
 
-  - `choice` — any 2-26 option request, text or image (PRD 13a.5's ceiling).
+  - `choice` — any 2-588 option request, text or image (PRD 5.1b's measured ceiling).
   - `noul` — internally a 2-way `choice("Yes","No")`; returns a bare `float`
     (`P(Yes)`), matching Jev's real wire contract (Section 1.2's table), not
     a dict.

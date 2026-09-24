@@ -61,7 +61,7 @@ screenshot):
 - DecoderVisionMultischemaBackend: the vision-capable sibling of
   DecoderMultischemaBackend, not a rewrite of it. It reuses the exact same
   restricted-logit mechanism (factored out below into
-  `_assert_single_token_letters()` and `_restricted_logit_result()`
+  `_build_code_table_for_backend()` and `_restricted_logit_result()`
   specifically so this file never reimplements that mechanism a third time --
   PRD.md 5.2b's own probe found "the restricted-logit read still works,
   unchanged" once a vision-language forward pass is substituted for a
@@ -331,10 +331,16 @@ def _build_multischema_prompt(state: str, options: list[str], letters: list[str]
     n = len(options)
     option_lines = "\n".join(f"{letters[i]}) {opt}" for i, opt in enumerate(options))
     instructions = instructions or "Choose the option that best answers the question below."
-    return (
-        f"{instructions}\n\n{state}\n\nOptions:\n{option_lines}\n\n"
-        f"Answer with a single letter ({'/'.join(letters[:n])})."
-    )
+    # PRD 5.1b implementation checklist item 2: n <= 26 stays byte-identical
+    # to the pre-5.1b mechanism (protects the 8 corpus tasks that already
+    # worked); n > 26 names a range instead of enumerating every code
+    # (enumerating costs 32% more tokens at width 151, measured, for no
+    # benefit since the options are already listed above).
+    if n <= 26:
+        tail = f"Answer with a single letter ({'/'.join(letters[:n])})."
+    else:
+        tail = f"Answer with a single option code from the list above ({letters[0]} .. {letters[n-1]})."
+    return f"{instructions}\n\n{state}\n\nOptions:\n{option_lines}\n\n{tail}"
 
 
 def _prompt_content(text: str, image_path: str | None):
@@ -352,28 +358,32 @@ def _prompt_content(text: str, image_path: str | None):
     return [{"type": "image"}, {"type": "text", "text": text}]
 
 
-def _assert_single_token_letters(tokenizer, letters: list[str], base_model_name: str) -> list[int]:
+def _build_code_table_for_backend(tokenizer, max_options: int, base_model_name: str) -> tuple[list[str], list[int]]:
     """Shared by DecoderMultischemaBackend and DecoderVisionMultischemaBackend
-    -- the same runtime check both scripts' own `assert_letter_tokens()`
-    (training/decoder_lora_lib.py) makes at training time, re-verified here
-    rather than trusted from the manifest: refuse to silently misread a
-    letter position if this checkpoint's tokenizer doesn't tokenize
-    A..<n-th letter> as single, mutually distinct tokens. Factored out once
-    so neither backend below reimplements it -- this is the second of the two
-    genuinely shared pieces of the restricted-logit mechanism, alongside
-    `_restricted_logit_result()`."""
-    letter_ids: list[int] = []
-    for letter in letters:
-        ids = tokenizer.encode(letter, add_special_tokens=False)
-        if len(ids) != 1:
-            raise RuntimeError(
-                f"letter {letter!r} is not a single token under {base_model_name}'s tokenizer: {ids} "
-                "-- this checkpoint's restricted-logit mechanism assumes exactly one token per letter."
-            )
-        letter_ids.append(ids[0])
-    if len(set(letter_ids)) != len(letter_ids):
-        raise RuntimeError(f"letter token ids are not mutually distinct: {letter_ids}")
-    return letter_ids
+    -- PRD 5.1b's `training.decoder_lora_lib.build_code_table()`, re-run here
+    rather than trusted from the manifest: refuse to silently misread a code
+    position if this checkpoint's tokenizer doesn't tokenize the table the
+    way training assumed. Sliced to this checkpoint's own `max_options` (an
+    older checkpoint may still report 26; a checkpoint's manifest is always
+    the authority on its own width, never this table's full size). Factored
+    out once so neither backend below reimplements it -- this is the second
+    of the two genuinely shared pieces of the restricted-logit mechanism,
+    alongside `_restricted_logit_result()`."""
+    from training.decoder_lora_lib import build_code_table
+
+    try:
+        codes, ids = build_code_table(tokenizer)
+    except AssertionError as e:
+        raise RuntimeError(
+            f"code table construction failed under {base_model_name}'s tokenizer: {e} -- this "
+            "checkpoint's restricted-logit mechanism assumes the table `build_code_table()` derives."
+        ) from e
+    if max_options > len(codes):
+        raise RuntimeError(
+            f"checkpoint reports max_options={max_options}, but only {len(codes)} single-token codes "
+            f"exist under {base_model_name}'s tokenizer -- the checkpoint and the running tokenizer disagree."
+        )
+    return codes[:max_options], ids[:max_options]
 
 
 def _restricted_logit_result(last_logits, letter_ids_n, options: list[str], temperature: float, torch) -> dict:
@@ -472,7 +482,6 @@ class DecoderMultischemaBackend:
         self.manifest = json.loads(manifest_path.read_text())
         self.checkpoint_name = checkpoint_dir.name
         self.max_options = int(self.manifest["max_options"])
-        self.letters = [chr(ord("A") + i) for i in range(self.max_options)]
         self.apply_temperature = apply_temperature
         self.temperature = float(self.manifest.get("temperature", 1.0)) if apply_temperature else 1.0
 
@@ -489,7 +498,9 @@ class DecoderMultischemaBackend:
         self.model.to(self.device)
         self.model.eval()
 
-        self._letter_ids = _assert_single_token_letters(self.tokenizer, self.letters, base_model_name)
+        self.letters, self._letter_ids = _build_code_table_for_backend(
+            self.tokenizer, self.max_options, base_model_name
+        )
 
     def describe(self) -> dict:
         return {
@@ -618,7 +629,7 @@ class DecoderVisionMultischemaBackend:
     available on top of the existing class), and forcing that into one
     __init__ with branching would be harder to read than two short, separate
     ones. What both classes share -- the restricted-logit mechanism itself --
-    is factored out above into `_assert_single_token_letters()` and
+    is factored out above into `_build_code_table_for_backend()` and
     `_restricted_logit_result()` precisely so it is not reimplemented here a
     third time. That is the concrete meaning of "sibling, not reinvented":
     the ~15 lines every decoder-family backend needs are shared functions;
@@ -657,7 +668,7 @@ class DecoderVisionMultischemaBackend:
          match nothing in `target_modules`) rather than by an explicit
          freeze -- worth making deliberate rather than trusting it silently.
          Re-checked here at load time, the same discipline
-         `_assert_single_token_letters()` already applies to the letter-token
+         `_build_code_table_for_backend()` already applies to the letter-token
          mechanism: don't trust the manifest's claim that this holds, verify
          it against the actually-loaded model.
       5. **`max_pixels`**, read from the checkpoint's manifest by default (or
@@ -708,7 +719,6 @@ class DecoderVisionMultischemaBackend:
         self.manifest = json.loads(manifest_path.read_text())
         self.checkpoint_name = checkpoint_dir.name
         self.max_options = int(self.manifest.get("max_options", DECODER_MULTISCHEMA_MAX_OPTIONS))
-        self.letters = [chr(ord("A") + i) for i in range(self.max_options)]
         self.apply_temperature = apply_temperature
         self.temperature = float(self.manifest.get("temperature", 1.0)) if apply_temperature else 1.0
         # PRD.md 5.2b: 256*28*28 caps any screenshot at 180 image tokens --
@@ -733,7 +743,9 @@ class DecoderVisionMultischemaBackend:
         self.model.to(self.device)
         self.model.eval()
 
-        self._letter_ids = _assert_single_token_letters(self.processor.tokenizer, self.letters, base_model_name)
+        self.letters, self._letter_ids = _build_code_table_for_backend(
+            self.processor.tokenizer, self.max_options, base_model_name
+        )
 
         # PRD.md 5.2b / training/decoder_lora_lib.assert_vision_tower_frozen():
         # the vision tower is frozen by target_modules name-mismatch, not by
