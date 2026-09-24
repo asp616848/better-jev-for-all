@@ -1,0 +1,39 @@
+{
+  "benchmark": "jevbench",
+  "run_id": "jevbench-selftest-mock-20260924T030137Z",
+  "timestamp_utc": "2026-09-24T03:01:37Z",
+  "seed": 0,
+  "harness_git_commit": "3942bd6baf701945ba18a30fafb8b540050c8769",
+  "dataset": {
+    "source": "synthetic fixture authored in this repo for harness self-test, NOT real JevBench data",
+    "path": "benchmarks/jevbench/fixtures/selftest.jsonl",
+    "n_items": 4
+  },
+  "schema_filter": {
+    "checkpoint_labels": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "unsupported_reasons": {}
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "mock",
+    "note": "NOT a trained model -- a deterministic keyword heuristic used only to prove the harness pipeline (filter -> call -> score -> evidence bundle) works end to end without torch, transformers, or a checkpoint on disk."
+  },
+  "results": {
+    "n_items_considered": 4,
+    "n_supported_by_fixed_schema": 4,
+    "n_unsupported": 0,
+    "n_supported_with_image": 0,
+    "n": 4,
+    "accuracy": 0.5,
+    "brier": 0.6034375000000001,
+    "ece": 0.4625,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_fixed_schema is how many items this checkpoint could legitimately attempt (a 'choice' item whose options are exactly the checkpoint's fixed 3-way schema). is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted -- as of this checkpoint that has never happened (PRD.md Section 10a); read benchmarks/README.md and the per-benchmark README before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jevbench-selftest-mock-20260924T030137Z.raw",
+  "harness_selftest": true
+}

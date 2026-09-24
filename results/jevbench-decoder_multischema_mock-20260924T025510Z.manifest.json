@@ -1,0 +1,46 @@
+{
+  "benchmark": "jevbench",
+  "run_id": "jevbench-decoder_multischema_mock-20260924T025510Z",
+  "timestamp_utc": "2026-09-24T02:55:10Z",
+  "seed": 0,
+  "harness_git_commit": "3942bd6baf701945ba18a30fafb8b540050c8769",
+  "dataset": {
+    "source_repo": "https://github.com/fstandhartinger/jevbench",
+    "license": "MIT (repo-level license verified via GitHub API 2026-09-22; every vendored record also carries its own provenance.license == \"MIT\" field)",
+    "vendored_files": [
+      "easy.jsonl",
+      "hard.jsonl",
+      "original.jsonl"
+    ],
+    "n_public_items": 231,
+    "n_total_incl_heldout": 534,
+    "note": "231 of JevBench v1.2's 534 total decisions are public (original 72, easy 48, hard 111); the remaining 303 (heldout 24, router 78, judge 68, easy-heldout 24, 109 more hard items) are deliberately unpublished by upstream and cannot be vendored here -- see benchmarks/jevbench/README.md."
+  },
+  "schema_filter": {
+    "max_options": 26,
+    "unsupported_reasons": {
+      "question_type='noul' (no trained model for 'score'/'noul')": 74,
+      "question_type='score' (no trained model for 'score'/'noul')": 18
+    }
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema_mock",
+    "max_options": 26,
+    "note": "NOT a trained model -- a deterministic keyword-overlap heuristic used only to prove the multischema harness pipeline (filter -> call -> score -> evidence bundle) works end to end without torch, transformers, peft, or a checkpoint on disk."
+  },
+  "results": {
+    "n_items_considered": 231,
+    "n_supported_by_multischema_cap": 139,
+    "n_unsupported": 92,
+    "n_supported_with_image": 0,
+    "n": 139,
+    "accuracy": 0.2517985611510791,
+    "brier": 0.7843184084810101,
+    "ece": 0.16626811272398612,
+    "is_complete_benchmark_score": false,
+    "note": "n_supported_by_multischema_cap is how many items a decoder/multischema model could legitimately attempt (a 'choice' item with between 2 and max_options=26 options, whose gold label is one of them). n_supported_with_image is how many of those items also carry a real screenshot (PRD.md 5.2b/13a.11) -- only decoder-vision-multischema[-mock] backends actually use it; every other backend here ignores an item's image the same way it ignores `instructions` if it doesn't need it. is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jevbench-decoder_multischema_mock-20260924T025510Z.raw",
+  "harness_selftest": false
+}

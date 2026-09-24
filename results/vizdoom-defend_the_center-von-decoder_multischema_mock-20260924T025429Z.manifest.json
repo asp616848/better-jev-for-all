@@ -1,0 +1,80 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-defend_the_center-von-decoder_multischema_mock-20260924T025429Z",
+  "timestamp_utc": "2026-09-24T02:54:29Z",
+  "seed": 0,
+  "harness_git_commit": "3942bd6baf701945ba18a30fafb8b540050c8769",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/defend_the_center.cfg (stock, ships in the wheel)",
+    "seeds": [
+      42106076
+    ],
+    "seeds_are_vons_published_seeds": false,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "von",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "attack",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "Arena combat decision rule: 1. If an enemy is visible dead center in the crosshair, select attack. 2. If an enemy is visible on the left side of the screen, select turn left. 3. If an enemy is visible on the right side of the screen, select turn right. 4. If no enemies are visible in field of view, select turn left to sweep the arena.\nattack: An enemy is visible dead center on the crosshair. Fire weapon immediately.\nturn left: Target is on the left side, or no active enemies are visible in view; rotate view left to search.\nturn right: Target is visible on the right side of the view; rotate view right to center target."
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema_mock",
+    "max_options": 26,
+    "note": "NOT a trained model -- a deterministic keyword-overlap heuristic used only to prove the multischema harness pipeline (filter -> call -> score -> evidence bundle) works end to end without torch, transformers, peft, or a checkpoint on disk."
+  },
+  "results": {
+    "scenario": "defend_the_center",
+    "rubric": "von",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      42106076
+    ],
+    "n_decisions": 90,
+    "n_out_of_schema": 0,
+    "kills_by_episode": [
+      {
+        "seed": 42106076,
+        "episode_index": 0,
+        "steps": 90,
+        "kills": 2.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.08792011067271233,
+        "latency_ms_p95": 0.21276897750794888
+      }
+    ],
+    "kills_aggregate": {
+      "mean": 2.0,
+      "sd": 0.0,
+      "min": 2.0,
+      "max": 2.0,
+      "n_episodes": 1
+    },
+    "rubric_agreement": {
+      "n": 90,
+      "accuracy": 0.03333333333333333,
+      "brier": 0.6666666666666669,
+      "ece": 0.3222222222222222,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": true,
+      "out_dir": "training/dagger_data/vizdoom/20260924T025427Z/defend_the_center_von",
+      "jsonl": "training/dagger_data/vizdoom/20260924T025427Z/defend_the_center_von/triples.jsonl",
+      "n_triples": 90
+    }
+  },
+  "raw_output_file": "vizdoom-defend_the_center-von-decoder_multischema_mock-20260924T025429Z.raw",
+  "episodic": true
+}

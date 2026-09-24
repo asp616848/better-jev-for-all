@@ -1,0 +1,154 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-health_gathering-none-decoder_multischema_mock-20260924T025311Z",
+  "timestamp_utc": "2026-09-24T02:53:11Z",
+  "seed": 0,
+  "harness_git_commit": "3942bd6baf701945ba18a30fafb8b540050c8769",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/health_gathering.cfg (stock, ships in the wheel)",
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "none",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "move forward",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "You are controlling a marine navigating a room with acid-damage terrain in ViZDoom. Your goal is to survive as long as possible by finding medkits and avoiding hazards. Choose the action to take next, given the situation described below."
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_multischema_mock",
+    "max_options": 26,
+    "note": "NOT a trained model -- a deterministic keyword-overlap heuristic used only to prove the multischema harness pipeline (filter -> call -> score -> evidence bundle) works end to end without torch, transformers, peft, or a checkpoint on disk."
+  },
+  "results": {
+    "scenario": "health_gathering",
+    "rubric": "none",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "n_decisions": 768,
+    "n_out_of_schema": 0,
+    "survival_s_by_episode": [
+      {
+        "seed": 41006394,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.028984155505895615,
+        "latency_ms_p95": 0.07155118510127068
+      },
+      {
+        "seed": 41006395,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.038471072912216187,
+        "latency_ms_p95": 0.08223135955631733
+      },
+      {
+        "seed": 41006396,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.03908807411789894,
+        "latency_ms_p95": 0.06025517359375954
+      },
+      {
+        "seed": 41006397,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.03445753827691078,
+        "latency_ms_p95": 0.049910275265574455
+      },
+      {
+        "seed": 41006398,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.03993138670921326,
+        "latency_ms_p95": 0.06436463445425034
+      },
+      {
+        "seed": 41006399,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.04530278965830803,
+        "latency_ms_p95": 0.08537503890693188
+      },
+      {
+        "seed": 41006400,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.0423649325966835,
+        "latency_ms_p95": 0.09656674228608608
+      },
+      {
+        "seed": 41006401,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 0.026624184101819992,
+        "latency_ms_p95": 0.055357348173856735
+      }
+    ],
+    "survival_s_aggregate": {
+      "mean": 10.971428571428572,
+      "sd": 0.0,
+      "min": 10.971428571428572,
+      "max": 10.971428571428572,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 768,
+      "accuracy": 0.4075520833333333,
+      "brier": 0.6049200084055723,
+      "ece": 0.08798212630603301,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-health_gathering-none-decoder_multischema_mock-20260924T025311Z.raw",
+  "episodic": true
+}
