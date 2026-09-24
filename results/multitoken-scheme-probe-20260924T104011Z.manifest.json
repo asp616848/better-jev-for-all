@@ -1,0 +1,718 @@
+{
+  "probe": "multitoken_option_scheme",
+  "base_model": "Qwen/Qwen3.5-4B",
+  "timestamp_utc": "2026-09-24T10:39:42Z",
+  "versions": {
+    "transformers": "5.17.0",
+    "torch": "2.14.0+cu130"
+  },
+  "question": "Can the restricted-logit mechanism address >26 options, and by which route -- a multi-token identifier (PRD 13a.5) or 5.1a's cross-attention head?",
+  "single_letter_baseline": {
+    "all_single_token": true,
+    "ids": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57
+    ],
+    "contiguous": true,
+    "mutually_distinct": true,
+    "note": "Re-derived here rather than carried over from schema.py's literal (dev-guidelines rule 3)."
+  },
+  "vocab_scan": {
+    "vocab_size": 248077,
+    "patterns": {
+      "[A-Z]": {
+        "count": 26,
+        "sample": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G",
+          "H"
+        ]
+      },
+      "[a-z]": {
+        "count": 26,
+        "sample": [
+          "a",
+          "b",
+          "c",
+          "d",
+          "e",
+          "f",
+          "g",
+          "h"
+        ]
+      },
+      "[0-9]": {
+        "count": 10,
+        "sample": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ]
+      },
+      "[A-Z]{2}": {
+        "count": 562,
+        "sample": [
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH"
+        ]
+      },
+      "[A-Z]{3}": {
+        "count": 1128,
+        "sample": [
+          "AAA",
+          "AAC",
+          "AAD",
+          "AAF",
+          "AAP",
+          "ABA",
+          "ABB",
+          "ABC"
+        ]
+      },
+      "[A-Za-z]{2}": {
+        "count": 1497,
+        "sample": [
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH"
+        ]
+      },
+      "[A-Z][0-9]": {
+        "count": 0,
+        "sample": []
+      },
+      "[0-9]{2}": {
+        "count": 0,
+        "sample": []
+      },
+      "[0-9]{3}": {
+        "count": 0,
+        "sample": []
+      },
+      "\u0120[A-Z]": {
+        "count": 26,
+        "sample": [
+          "\u0120A",
+          "\u0120B",
+          "\u0120C",
+          "\u0120D",
+          "\u0120E",
+          "\u0120F",
+          "\u0120G",
+          "\u0120H"
+        ]
+      },
+      "\u0120[A-Z]{2}": {
+        "count": 544,
+        "sample": [
+          "\u0120AA",
+          "\u0120AB",
+          "\u0120AC",
+          "\u0120AD",
+          "\u0120AE",
+          "\u0120AF",
+          "\u0120AG",
+          "\u0120AH"
+        ]
+      }
+    },
+    "note": "A token existing in the vocabulary is necessary but NOT sufficient -- it must also survive `encode()` standalone and in real prompt context. Both checked next."
+  },
+  "identifier_schemes": {
+    "two_letter_uppercase": {
+      "space": 676,
+      "single_token_count": 562,
+      "multi_token_count": 114,
+      "multi_token_length_histogram": {
+        "2": 114
+      },
+      "first_missing": [
+        "BQ",
+        "BZ",
+        "CJ",
+        "CQ",
+        "CZ",
+        "DQ",
+        "DZ",
+        "EJ",
+        "EY",
+        "FJ",
+        "FQ",
+        "FV",
+        "FZ",
+        "GJ",
+        "GK",
+        "GQ"
+      ],
+      "note": "Codes that are NOT single tokens are simply excluded from the table -- there is no need to force them, since the single-token subset alone already exceeds every real option count in the corpus."
+    },
+    "mixed_case_plus_digits_single_position": {
+      "A-Z": 26,
+      "a-z_single_token": 26,
+      "0-9_single_token": 10,
+      "max_single_position_alphabet_without_pairs": 62,
+      "verdict": "62 < 151 -- case/digit mixing alone does NOT reach the widest real task."
+    },
+    "letter_digit_pairs": {
+      "space": 260,
+      "single_token_count": 0,
+      "verdict": "letter+digit pairs are not in this vocabulary as single tokens."
+    },
+    "decimal_numerals": {
+      "space": 199,
+      "single_token_count": 9,
+      "note": "Qwen splits multi-digit numerals into per-digit tokens; only 1-9 survive standalone."
+    },
+    "true_two_position_read": {
+      "pairs_encoding_to_exactly_2_tokens": 114,
+      "of_those_decomposing_into_the_two_single_letter_ids": 114,
+      "verdict": "A genuine two-position read is only well-defined for the pairs BPE refuses to merge -- the 562 that DO merge would have to be split artificially, which the tokenizer will not do. So a uniform two-position scheme over AA..ZZ is not available under this tokenizer; the single-token subset is."
+    }
+  },
+  "code_table": {
+    "size": 588,
+    "prefix_is_A_to_Z": true,
+    "first_after_letters": [
+      "AA",
+      "AB",
+      "AC",
+      "AD",
+      "AE",
+      "AF"
+    ],
+    "last": [
+      "ZW",
+      "ZX",
+      "ZY",
+      "ZZ"
+    ],
+    "all_single_token": true,
+    "all_ids_distinct": true,
+    "context_stable_in_option_line": true,
+    "context_failures": [],
+    "answer_position_clean_sample": {
+      "checked": 80,
+      "failures": [],
+      "note": "The chat template's generation prompt ends in a newline, so the answer token carries no leading space -- the code's standalone id is exactly what a greedy read at position -1 must match. Verified, not assumed."
+    },
+    "headroom_vs_widest_real_task": "588 codes vs 151 needed (clinc150) = 3.9x"
+  },
+  "real_task_prompt_cost": {
+    "label_spaces": {
+      "clinc150": 151,
+      "ledgar": 100,
+      "banking77": 77,
+      "go_emotions": 28
+    },
+    "per_task": {
+      "clinc150": {
+        "n_options": 151,
+        "needs_codes_beyond_26": true,
+        "prompt_tokens_range": 839,
+        "prompt_tokens_enumerate": 1105,
+        "prompt_tokens_current_26_option_subset": 212,
+        "fits_max_length_1280": true
+      },
+      "ledgar": {
+        "n_options": 100,
+        "needs_codes_beyond_26": true,
+        "prompt_tokens_range": 569,
+        "prompt_tokens_enumerate": 734,
+        "prompt_tokens_current_26_option_subset": 208,
+        "fits_max_length_1280": true
+      },
+      "banking77": {
+        "n_options": 77,
+        "needs_codes_beyond_26": true,
+        "prompt_tokens_range": 587,
+        "prompt_tokens_enumerate": 706,
+        "prompt_tokens_current_26_option_subset": 254,
+        "fits_max_length_1280": true
+      },
+      "go_emotions": {
+        "n_options": 28,
+        "needs_codes_beyond_26": true,
+        "prompt_tokens_range": 173,
+        "prompt_tokens_enumerate": 195,
+        "prompt_tokens_current_26_option_subset": 183,
+        "fits_max_length_1280": true
+      }
+    },
+    "note": "`range` names only the first and last code in the trailing answer line; `enumerate` lists every code the way the current 26-option prompt does. The difference is the real token cost of keeping the existing prompt shape verbatim at width 151."
+  },
+  "gpu": {
+    "prefill_by_option_width": {
+      "n=3": {
+        "prompt_tokens": 74,
+        "prefill_ms_median": 65.7,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 3,
+          "max_prob": 0.46104,
+          "entropy_nats": 0.9902,
+          "normalized_entropy": 0.9014,
+          "top5": [
+            [
+              2,
+              0.46104
+            ],
+            [
+              0,
+              0.40687
+            ],
+            [
+              1,
+              0.13209
+            ]
+          ]
+        }
+      },
+      "n=26": {
+        "prompt_tokens": 194,
+        "prefill_ms_median": 74.65,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 26,
+          "max_prob": 0.60706,
+          "entropy_nats": 1.75,
+          "normalized_entropy": 0.5371,
+          "top5": [
+            [
+              7,
+              0.60706
+            ],
+            [
+              12,
+              0.0725
+            ],
+            [
+              13,
+              0.05646
+            ],
+            [
+              8,
+              0.03881
+            ],
+            [
+              2,
+              0.03022
+            ]
+          ]
+        }
+      },
+      "n=60": {
+        "prompt_tokens": 372,
+        "prefill_ms_median": 86.94,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 60,
+          "max_prob": 0.98512,
+          "entropy_nats": 0.0825,
+          "normalized_entropy": 0.0201,
+          "top5": [
+            [
+              38,
+              0.98512
+            ],
+            [
+              12,
+              0.01405
+            ],
+            [
+              0,
+              0.00027
+            ],
+            [
+              31,
+              0.00024
+            ],
+            [
+              39,
+              7e-05
+            ]
+          ]
+        }
+      },
+      "n=77": {
+        "prompt_tokens": 454,
+        "prefill_ms_median": 101.98,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 77,
+          "max_prob": 0.99408,
+          "entropy_nats": 0.0399,
+          "normalized_entropy": 0.0092,
+          "top5": [
+            [
+              38,
+              0.99408
+            ],
+            [
+              12,
+              0.00522
+            ],
+            [
+              0,
+              0.00033
+            ],
+            [
+              31,
+              0.00012
+            ],
+            [
+              39,
+              6e-05
+            ]
+          ]
+        }
+      },
+      "n=100": {
+        "prompt_tokens": 570,
+        "prefill_ms_median": 117.49,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 100,
+          "max_prob": 0.9939,
+          "entropy_nats": 0.0412,
+          "normalized_entropy": 0.0089,
+          "top5": [
+            [
+              38,
+              0.9939
+            ],
+            [
+              12,
+              0.00522
+            ],
+            [
+              0,
+              0.00055
+            ],
+            [
+              31,
+              8e-05
+            ],
+            [
+              39,
+              7e-05
+            ]
+          ]
+        }
+      },
+      "n=151": {
+        "prompt_tokens": 839,
+        "prefill_ms_median": 145.5,
+        "restricted_read_ok": true,
+        "untrained_prior": {
+          "n": 151,
+          "max_prob": 0.99115,
+          "entropy_nats": 0.0592,
+          "normalized_entropy": 0.0118,
+          "top5": [
+            [
+              38,
+              0.99115
+            ],
+            [
+              12,
+              0.00668
+            ],
+            [
+              0,
+              0.00132
+            ],
+            [
+              31,
+              0.00033
+            ],
+            [
+              5,
+              0.00011
+            ]
+          ]
+        }
+      }
+    },
+    "untrained_prior_comparability": {
+      "letters_26": {
+        "n": 26,
+        "max_prob": 0.60706,
+        "entropy_nats": 1.75,
+        "normalized_entropy": 0.5371,
+        "top5": [
+          [
+            7,
+            0.60706
+          ],
+          [
+            12,
+            0.0725
+          ],
+          [
+            13,
+            0.05646
+          ],
+          [
+            8,
+            0.03881
+          ],
+          [
+            2,
+            0.03022
+          ]
+        ]
+      },
+      "wide_codes_151": {
+        "n": 151,
+        "max_prob": 0.99115,
+        "entropy_nats": 0.0592,
+        "normalized_entropy": 0.0118,
+        "top5": [
+          [
+            38,
+            0.99115
+          ],
+          [
+            12,
+            0.00668
+          ],
+          [
+            0,
+            0.00132
+          ],
+          [
+            31,
+            0.00033
+          ],
+          [
+            5,
+            0.00011
+          ]
+        ]
+      },
+      "lm_head_row_norm": {
+        "letters_A_Z": {
+          "mean": 0.742,
+          "std": 0.0213
+        },
+        "two_letter_codes": {
+          "mean": 0.6742,
+          "std": 0.0247
+        },
+        "ratio_of_means": 0.9086
+      },
+      "note": "Untrained base model: this measures whether the wide code table is *mechanically* usable and whether its LM-head geometry is comparable to A-Z's, NOT accuracy. Accuracy is a training question."
+    },
+    "two_position_read_cost": {
+      "prefill_ms_median": 152.36,
+      "kv_cached_second_step_ms_median": 40.81,
+      "second_step_overhead_pct": 26.8,
+      "one_pass_two_position_ms_median": 146.16,
+      "one_pass_overhead_vs_prefill_pct": -4.1,
+      "one_pass_positions_readable": [
+        838,
+        839
+      ],
+      "note": "Recorded because the task asked what a real multi-token read would cost. It is NOT needed -- section `code_table` shows a single-token table of 588 codes exists. The KV-cached second step is cheap in absolute terms but the one-pass variant factorises p(c1,c2|x) as p(c1|x)p(c2|x), which cannot represent a bimodal answer and would degrade exactly the calibration this project sells."
+    },
+    "late_interaction_cost_model": {
+      "hidden_size": 2560,
+      "option_batch_shape": [
+        151,
+        7
+      ],
+      "encode_151_options_ms_median": 864.19,
+      "encode_state_only_ms_median": 59.5,
+      "total_uncached_ms": 923.69,
+      "hidden_states_exposed": true,
+      "n_hidden_layers_returned": 33,
+      "note": "Option encodings are cacheable per fixed schema (banking77's 77 intents never change), so the steady-state cost is the state encode alone -- this is path 2's genuine advantage. It is bought with a new scoring head, a new training objective (contrastive, not next-token CE), and zero reuse of the restricted-logit infrastructure in decoder_lora_lib.py / backends.py."
+    },
+    "untrained_prior_stability": {
+      "n_prompts": 8,
+      "top10_codes_by_marginal": [
+        [
+          "F",
+          0.12511
+        ],
+        [
+          "AM",
+          0.12438
+        ],
+        [
+          "AX",
+          0.12361
+        ],
+        [
+          "EN",
+          0.12329
+        ],
+        [
+          "EL",
+          0.11987
+        ],
+        [
+          "X",
+          0.11733
+        ],
+        [
+          "CH",
+          0.11056
+        ],
+        [
+          "CA",
+          0.05249
+        ],
+        [
+          "AW",
+          0.0463
+        ],
+        [
+          "J",
+          0.00748
+        ]
+      ],
+      "same_top1_on_every_prompt": false,
+      "per_prompt_top3": [
+        [
+          "AM",
+          "M",
+          "A"
+        ],
+        [
+          "CA",
+          "AW",
+          "AA"
+        ],
+        [
+          "AX",
+          "A",
+          "X"
+        ],
+        [
+          "EN",
+          "B",
+          "E"
+        ],
+        [
+          "X",
+          "J",
+          "A"
+        ],
+        [
+          "F",
+          "E",
+          "A"
+        ],
+        [
+          "CH",
+          "AG",
+          "H"
+        ],
+        [
+          "EL",
+          "E",
+          "L"
+        ]
+      ],
+      "normalized_entropy_existing_26_letter_table": 0.3616,
+      "normalized_entropy_lexicographic_first_151": 0.4787,
+      "normalized_entropy_151_lowest_prior_codes": 0.9616,
+      "normalized_entropy_AZ_plus_125_lowest_prior_pairs": 0.235,
+      "lowest_prior_pair_codes_sample": [
+        "VP",
+        "VS",
+        "TI",
+        "VF",
+        "PV",
+        "TK",
+        "VT",
+        "YS",
+        "VB",
+        "QT",
+        "TD",
+        "VD"
+      ],
+      "note": "Untrained skew, measured across prompts rather than inferred from one. The 26-letter table has the same phenomenon in weaker form (6b), and trained through it fine (13a.6: 96.10%), so this is a thing to watch in the eval, not a blocker. Selecting the 151 lowest-prior codes instead of the lexicographically-first 151 is a real, cheap option if the trained calibration comes out poor -- the numbers above are what that choice would buy before training."
+    },
+    "training_shape_cost": {
+      "shapes": {
+        "width26_bs4": {
+          "seq_len": 194,
+          "batch": 4,
+          "fwd_bwd_ms": 687.7,
+          "peak_vram_gb": 12.2,
+          "oom": false
+        },
+        "width151_bs4": {
+          "seq_len": 839,
+          "batch": 4,
+          "fwd_bwd_ms": 3825.1,
+          "peak_vram_gb": 20.35,
+          "oom": false
+        },
+        "width151_bs2": {
+          "seq_len": 839,
+          "batch": 2,
+          "fwd_bwd_ms": 1650.8,
+          "peak_vram_gb": 15.05,
+          "oom": false
+        }
+      },
+      "wide_vs_narrow_step_ratio": 5.56,
+      "note": "LoRA r=16 + gradient checkpointing, the config every run in this lineage uses. This is what calibrates the GPU-hour estimate for the wide slice against a measured rate rather than a parameter count (PRD \u00a79's own caution)."
+    },
+    "environment": {
+      "device_name": "NVIDIA L40S",
+      "load_seconds": 6.2,
+      "weights_vram_gb": 9.77,
+      "peak_vram_gb": 15.05,
+      "free_vram_gb_at_start": 34.61
+    }
+  }
+}
