@@ -418,7 +418,7 @@ Checked directly against each repo's GitHub API license endpoint, not assumed fr
 | `phyous/tsai-sc` | MIT | Same |
 | `AbdelStark/heist-one` (HEIST//ONE) | MIT | Same |
 
-All three clear. When we actually fork any of them in Phase 2/3, keep the original LICENSE file (or the MIT notice block) alongside the vendored code, and note in our own README which parts are adapted from which upstream repo — MIT only requires the notice be preserved, but doing this makes the provenance trail auditable, which matters for a project whose whole pitch is evidence discipline (Section 8.2). Von's ViZDoom harness license was not checked in this pass (we don't yet know its exact repo path) — check before Phase 2 forks it specifically.
+All three clear. When we actually fork any of them in Phase 2/3, keep the original LICENSE file (or the MIT notice block) alongside the vendored code, and note in our own README which parts are adapted from which upstream repo — MIT only requires the notice be preserved, but doing this makes the provenance trail auditable, which matters for a project whose whole pitch is evidence discipline (Section 8.2). Von's ViZDoom harness license was not checked in this pass (we don't yet know its exact repo path) — check before Phase 2 forks it specifically. **Closed 2026-09-24 (8.1d): Von is Apache-2.0 (`gh api repos/wfzyx/von/license`), the harness is `benchmarks/doom_eval.py` + `benchmarks/run_doom_benchmark.py` on `master`, and ViZDoom itself is MIT (its own code) bundling GPL-descended ZDoom and 3-clause-BSD Freedoom assets — consumed as a published PyPI wheel, never forked or vendored, so only notice/attribution applies.**
 
 ---
 
@@ -428,7 +428,7 @@ This is the section that makes G3/G7 falsifiable instead of a slogan.
 
 ### 8.1 Standing benchmarks we commit to running and publishing, win or lose
 1. **jabr-v2** (49-task, 869-case OOD benchmark Von reports on) — reproduce Von's exact eval harness/seeds if publicly available; if not, use the same task categories and disclose the difference. Target: beat Von's 72.0% macro-accuracy. Publish our number regardless of outcome.
-2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both).
+2. **ViZDoom** `Defend the Center` and `Health Gathering`, same 8 shared seeds Von used. Targets: beat Von's 9.00 kills *and* its 12.11s survival (note: Von itself trails Jev's 13.03s on survival — so "beat Jev" and "beat Von" are two different bars here; report both). **Design resolved 2026-09-24 in 8.1d** (text arm first, vision arm second; Von's harness is text, verified from its own published code). **The survival target is restated there**: a uniform random policy measured on this server survives 14.09s, beating both Von's 12.11s and Jev's 13.03s, so that metric does not discriminate as configured and every published survival figure must carry the random baseline beside it. `Defend the Center` kills is the real bar.
 3. **StarCraft Strongarm** mission via `tsai-sc`'s harness (license permitting) or a faithful reimplementation — measure win rate and attempts-to-first-win, compared against the "attempt 16" figure reported for Jev.
 4. **browser-use/jev-ultrafast task** (Zurich→London Google Flights, plus its Wikipedia and hotel-search variants) — swap ekVachan in for Jev via the compatibility API, no other code changes, measure wall-clock and CDP call count against the disclosed 7.07s / 101-call baseline.
 5. **Calibration**: publish ECE (expected calibration error) the way Laya and Von do — this metric is currently a differentiator few alternatives report; we report it by default, always, not just when favorable. First numbers, on our own eval split rather than any of the benchmarks above, are in 13a.1 — published here whether or not a shared-benchmark number ever flatters them.
@@ -441,6 +441,323 @@ An independent KoBBQ audit of hosted Jev found it answers "unknown" on 95% of *d
 
 ### 8.1c ScreenSpot-v2 as the vision standing benchmark (addendum, 2026-09-24)
 Add **ScreenSpot-v2** (`benchmarks/screenspot_v2/`) to the standing suite alongside JevBench/jabr-v2 — the vision analogue of the same "third-party, zero-training-exposure" discipline (5.2b, 13a.11, 13a.12): Apache-2.0, vendored via the sibling `better-jev-bench` repo's `bjb export --slice heldout`, 858 real items reframed into genuine N-way (2-6 option) grounding-as-choice questions. Built and validated with a mock backend against the real data (858/858 filtered as supported, real image hash-verification, no checkpoint needed); the real accuracy/Brier/ECE run is one command away the moment `checkpoints/ekvachan-decoder-qwen-vision` finishes training — see 13a.12 for the full build record and exact command.
+
+### 8.1d ViZDoom resolved: text first, vision second, and two honest findings about Von's own numbers (addendum, 2026-09-24)
+
+Section 8.1 item 2 has committed since day one to running ViZDoom `Defend the Center` and
+`Health Gathering` on "the same 8 shared seeds Von used." That item has never had a design, and
+it is the one that matters most: Von's headline claim (**9.00 kills vs Jev's 5.62**) is a ViZDoom
+claim, so this is the decisive head-to-head, not a nice-to-have. This section resolves it, the
+same way 5.2b resolved the vision architecture — by running things rather than reasoning about
+them.
+
+Everything below was verified on this server on 2026-09-24, on CPU, with the 13a.11 training run
+untouched.
+
+#### The observation-modality question, answered by reading Von's actual harness
+
+The open question was whether to evaluate ViZDoom via **structured text game-state** (health /
+ammo / enemy positions serialised to text, a `choice` over the discrete action set) or via
+**vision** (raw frames through the now-existing `DecoderVisionMultischemaBackend`).
+
+**It is not a judgment call, because Von published its harness.** `benchmarks/doom_eval.py` and
+`benchmarks/run_doom_benchmark.py` in `wfzyx/von@master`, fetched via the GitHub API on
+2026-09-24 (274 and 116 lines respectively), disclose the protocol completely. Von's README
+describes its own observation as "a text rendering of the depth buffer" and "structured semantic
+scene observations" — and the code confirms it exactly:
+
+| Protocol element | Von's actual value |
+|---|---|
+| Observation | **Text.** `format_doom_state()` builds a sentence from ViZDoom's **labels buffer** (`object_name`, horizontal centre `(x + w/2)/W`, apparent size `h/H`), its **depth buffer** (median of three vertical bands: left fifth, centre fifth, right fifth, over the middle third of rows), and three game variables (`HEALTH`, `SELECTED_WEAPON_AMMO`, `KILLCOUNT`). |
+| Use of pixels | **None.** `screen_buffer` is read only to get `H, W` for normalising label coordinates. The RGB frame never reaches the model. |
+| Question | One `choice`, **3 options**. `defend_the_center`: `["attack", "turn left", "turn right"]`. `health_gathering`: `["move forward", "turn left", "turn right"]`. |
+| Quantisation | Positions bucket to 5 strings (`"on the far left"` … `"on the far right"`), sizes to 4 (`"point blank"` … `"far away"`), depth to 4 (`"a solid wall right in front"` … `"wide open space"`). Top 3 monsters / top 2 items by apparent size. |
+| Memory | One step: the previous action is appended as `"Previous executed action: <a>."`. |
+| Frameskip | `tics=4` |
+| Step cap | 300 model calls per episode |
+| Seeds | 8 per scenario, **published literally**: defend `42106076…42106083`, health `41006394…41006401` |
+| Metrics | `kills` = `KILLCOUNT` from the last snapshot; `survival_s` = `steps * 4 / 35.0` |
+| Config | Stock `defend_the_center.cfg` / `health_gathering.cfg`, `RES_320X240`, `RGB24`, HUD off, **crosshair on**, labels + depth buffers on, sound off, window invisible |
+
+**Decision: build the text arm first, and it is the headline comparison. Build the vision arm
+second, on identical seeds, scenarios and metrics, and report it as an ekVachan-only capability
+result — never as "the Von number."**
+
+The reasoning, in the order the reasons actually bind:
+
+1. **Fidelity is not optional here.** Von's number was produced from text. Running ekVachan from
+   pixels against 9.00 kills compares two different benchmarks and calls it a head-to-head. That
+   it is *harder* does not make it *more honest* — 8.3's "what we proved it means" bar is a
+   like-for-like reproduction, and this is the one benchmark where the competitor published
+   enough to make like-for-like actually achievable. Squander that and the comparison is
+   permanently arguable.
+2. **Text is runnable today; vision is not.** The text arm needs nothing but
+   `checkpoints/ekvachan-decoder-qwen-benchcorpus` and `DecoderMultischemaBackend`, both of which
+   exist and are validated (13a.7, 13a.10). The vision arm needs
+   `checkpoints/ekvachan-decoder-qwen-vision`, which was at step 250/1219 when this was written.
+   Sequencing text first costs nothing and unblocks the milestone immediately.
+3. **But vision is where the only *structural* differentiator lives, so it is not optional
+   either.** §3.2 point 2: no open alternative has shipped multimodal input, Von explicitly
+   included. ViZDoom-from-pixels is the single place in the whole standing suite where ekVachan
+   can demonstrate, in the *same environment, on the same seeds, under the same metric*, a thing
+   Von structurally cannot do at all. "We beat Von at Von's own text game" is a good result;
+   "and we also play it from the raw frame, which Von cannot" is a much better one, and it costs
+   only a second observation builder.
+4. **The marginal cost of the second arm is genuinely small.** The environment loop, action set,
+   seeds, frameskip, step cap, metrics, rubric and evidence bundle are all shared. The arms
+   differ in exactly one function: `observe_text(snapshot) -> str` versus
+   `observe_frame(snapshot) -> (str, png_path)`. `benchmarks/common/backends.py` already exposes
+   both a text and a vision restricted-logit backend behind one `predict_choice(state, options,
+   instructions=..., image_path=...)` signature (13a.12), so the harness picks an arm by choosing
+   a backend and an observer, not by branching through its own logic.
+5. **The text arm's teacher is the vision arm's training data, for free.** See "the rubric is
+   computable" below. This is the cheapest route to §5.3b's on-policy DAgger data for the game
+   slice that exists, and it only appears if both arms share one environment loop.
+
+#### Finding 1: ViZDoom runs headless on this server, verified, with one real trap
+
+- **`vizdoom==1.3.1` installs from a prebuilt manylinux wheel — no compilation, no CMake, no
+  system Doom dependency.** 7 packages total (`vizdoom`, `numpy`, `gymnasium`, `pygame-ce`,
+  `cloudpickle`, `farama-notifications`, `typing-extensions`), ~65 MB of downloads, 1m38s wall.
+- **No display, no X server, no virtual framebuffer.** `DISPLAY` is empty on this box and both
+  scenarios ran to completion with `set_window_visible(False)`; ViZDoom's software renderer needs
+  no GL context. `xvfb-run` is **not** required — a real question given how many headless RL
+  environments do need it, which is why it was checked rather than assumed.
+- **Throughput, measured:** ~1,300–1,800 environment ticks/sec with a random policy at
+  frameskip 4, entirely on CPU. At Von's 300-step cap, the environment cost of a full 8-seed
+  scenario is seconds. **The wall-clock of a run is therefore ~100% model inference**, which
+  makes the per-decision latency budget (7.3) the only thing that matters for how long a run
+  takes: 8 seeds × up to 300 steps × 2 scenarios ≈ 4,800 decisions, so at ~40 ms/decision the
+  whole benchmark is ~3 minutes.
+- **Both scenarios ship inside the wheel** at `vizdoom.scenarios_path` — `defend_the_center.cfg`
+  + `.wad` and `health_gathering.cfg` + `.wad`. Nothing needs downloading, and stock configs are
+  what Von loads, so there is no config to reconstruct.
+- **Labels and depth buffers both work headless** — confirmed by pulling real
+  `(object_name, position)` tuples and a real `depth_buffer` array out of a running episode.
+  These are exactly the two buffers Von's text observation is built from, so the text arm is
+  reproducible here in full.
+- **The trap, recorded because it cost a cycle:** this server's `python3` is **3.6.15**, and
+  `pip install vizdoom` under it falls back to a CMake **source build** and fails. The wheel path
+  only exists for modern Python. Use the repo's own `uv` environment (`requires-python >= 3.11`);
+  do not install ViZDoom with the system interpreter.
+
+#### Finding 2: `Health Gathering` survival does not discriminate — and Von's own table says so
+
+This is the finding that changes what 8.1 item 2 should promise.
+
+**Von's own `run_doom_benchmark.py` prints a comparison table containing
+`Random Action Baseline: 1.88 kills | 15.77 s`.** A uniform random policy's 15.77 s survival
+**beats Von's own 12.11 s and Jev's 13.03 s.** Von's README headlines Defend-the-Center and does
+not draw attention to this; the number is nonetheless right there in its own committed code.
+
+Independently measured on this server (uniform random over the 3-button set, 8 seeds × 10
+episodes each, stock config, frameskip 4):
+
+| Scenario | Random policy, measured here | Von's published random | Von | Jev |
+|---|---|---|---|---|
+| `defend_the_center` (kills) | **1.53** (sd across seeds 0.39, range 0.9–2.0) | 1.88 | 9.00 | 5.62 |
+| `health_gathering` (survival s) | **14.09** (sd across seeds 1.03) | 15.77 | 12.11 | 13.03 |
+
+Frameskip sensitivity, also measured (8 seeds × 5 episodes each), because frameskip is the one
+protocol knob that could explain the discrepancy away:
+
+| frameskip | `defend_the_center` random kills | `health_gathering` random survival s |
+|---|---|---|
+| 1 | 0.90 | 12.83 |
+| 2 | 1.27 | 13.33 |
+| **4 (Von's)** | **1.62** | **14.04** |
+| 8 | 2.00 | 16.19 |
+| 12 | 1.95 | 15.80 |
+
+It does not explain it away. **At every frameskip tested, a uniform random policy meets or beats
+Von's 12.11 s.** For extra context, a degenerate always-press-one-button policy survives 11.0 s,
+and the stock `health_gathering.cfg` episode timeout is 2,100 tics (60 s) — so the entire
+observed dynamic range between "do nothing" and "random" is about 3 seconds, and **both Von and
+Jev sit inside it.**
+
+**Consequences, adopted:**
+
+- **`Defend the Center` kills is the real benchmark.** Random 1.5–1.9, always-attack 1.38,
+  always-turn-left 0.00, Jev 5.62, Von 9.00 — a wide, well-ordered dynamic range in which a
+  result means something. This is where "beat Von" is a meaningful claim.
+- **8.1 item 2's survival target is restated.** "Beat Von's 12.11 s" is a target a random policy
+  already meets and is therefore not a real bar. The harness still reports survival — dropping a
+  metric because it is unflattering to a competitor would be its own kind of dishonesty — but
+  **every published survival figure carries the measured random baseline beside it**, and the
+  stated bar becomes "beat random on the same seeds," which Jev clears only marginally (13.03 vs
+  12.83 at frameskip 1) and Von does not clear at all.
+- **Report, do not spin.** If ekVachan's survival also lands inside the noise band, the honest
+  statement is "this metric does not separate any System One model from random action selection
+  as configured," not "we beat Von." §8.3 and dev-guidelines rule 1 both require the caveat in
+  the PRD text itself.
+- Our 1.53 and Von's 1.88 differ by less than one per-seed standard deviation (our per-seed range
+  was 0.9–2.0) across different seed sets and Von's 300-step truncation; they agree, and the
+  agreement is worth stating because it independently corroborates that Von's harness does what
+  its code says it does.
+
+#### Finding 3: Von's `instructions` contain the answer, so both conditions get run
+
+`get_doom_question()` embeds a complete four-clause decision rule in `instructions` — "If an enemy
+is visible dead center in the crosshair, select attack. If an enemy is visible on the left…" —
+plus a per-option `criteria` dict restating it. Given that `format_doom_state()` has already
+quantised enemy position into the same five buckets the rule keys on, **a model that simply
+follows the instructions solves the task without any learned game understanding.** §3.1 already
+records that Von "degrades without explicit rubric text in `instructions`"; this is that property
+in its source form, and it is the single largest fairness lever in the comparison.
+
+**Resolution: run both conditions, always, and publish both.**
+
+- **`--rubric von`** — Von's `instructions` and `criteria` strings verbatim. **This is the
+  headline like-for-like number**, the one comparable to 9.00 / 5.62.
+- **`--rubric none`** — a bare task description naming the goal and the action set, with no
+  if/then rule. Reported beside it.
+
+Publishing only the rubric condition hides how much of the score is prompt; publishing only the
+no-rubric condition scores a different task than Von's number came from. The gap between them is
+the most interesting single quantity this benchmark produces, and it is a direct, measured test
+of §3.1's claim about Von — which we can run against Von's own Apache-2.0 weights on the same
+harness.
+
+**One protocol conversion, recorded because it is the only place we are not byte-identical to
+Von.** Von's `Choice` type carries `criteria` as an option→criterion mapping; ekVachan's
+`/v1/systemone` `choice` takes a flat `options: list[str]`. Conversion:
+`options = list(criteria.keys())` in declared order, and each criterion is appended to
+`instructions` as a `"<option>: <criterion>"` line so no text is dropped. The conversion is
+deterministic, recorded in the evidence bundle, and is a no-op under `--rubric none`.
+
+#### Finding 4: the rubric is computable, which gives per-decision metrics and a free DAgger teacher
+
+Von's rule is a **deterministic function of the snapshot** — it keys only on whether a monster is
+visible, its quantised horizontal bucket, and the depth bands, all of which the harness already
+computes. So the harness can evaluate the rule itself, per tick. Three things fall out, none of
+which the episode-outcome metrics can provide:
+
+1. **Per-decision `rubric_agreement`, with real calibration numbers.** ViZDoom has no gold label,
+   so `eval/metrics.py`'s accuracy / Brier / ECE are undefined against the environment. Against
+   the rubric's own prescribed action they are perfectly well defined. This is **not** accuracy
+   and must never be reported as such — it is "how often, and how confidently, does the model do
+   what the prompt told it to" — but it is the only way this benchmark produces an ECE, and
+   calibration is the project's stated differentiator (8.1 item 5).
+2. **A rubric-oracle baseline that tells you what the benchmark is even measuring.** Run the
+   rule itself as a policy on the same 8 seeds. **This is cheap, CPU-only, needs no model, and
+   must be computed first**, because it is the number that interprets everything else: if the
+   oracle scores ~6 kills, then Von's 9.00 means Von is *not* following the rubric but doing
+   something better than it, and the rubric condition is measuring game understanding after all.
+   If the oracle scores ~9, the rubric condition is largely measuring instruction-following. We
+   do not currently know which, and it is knowable for the cost of a few CPU-seconds.
+3. **§5.3b's DAgger teacher, for free, on both arms.** 5.3b commits to behaviour-cloning then two
+   DAgger rounds for the game slice and leaves the teacher unspecified. The rubric *is* a teacher:
+   deterministic, zero-cost, already validated by Von's own published numbers. Because both arms
+   share one environment loop, a text-arm rollout can emit, for the same tick, the text
+   observation, the saved frame, and the teacher's action — i.e. **on-policy (frame, action)
+   pairs for the vision arm, generated by the text arm.** That is the cheapest available path to
+   the on-policy game data 5.3b wants, and per §5.3b/§9's boundary rule this data stays in this
+   repo (it is a function of the checkpoint, not a static licensed corpus, so it cannot go to
+   better-jev-bench).
+
+#### License check — this closes §7.4's explicitly-open ViZDoom item
+
+§7.4 recorded: "Von's ViZDoom harness license was not checked in this pass (we don't yet know its
+exact repo path) — check before Phase 2 forks it specifically." Checked, 2026-09-24:
+
+- **Von: Apache-2.0**, via `gh api repos/wfzyx/von/license` → `spdx_id: "Apache-2.0"`. The
+  harness lives at `benchmarks/doom_eval.py` + `benchmarks/run_doom_benchmark.py` on `master`.
+  We **reimplement** the protocol in this repo's own idiom rather than forking the files, but the
+  protocol *constants* — the 16 seeds, frameskip, step cap, action names, and the `instructions`
+  / `criteria` strings — are taken verbatim, because taking them verbatim is the entire point of
+  a like-for-like reproduction. They are therefore treated as vendored Apache-2.0 data with a
+  `benchmarks/vizdoom/NOTICE.md`, exactly the pattern `benchmarks/screenspot_v2/NOTICE.md`
+  already established.
+- **ViZDoom: MIT** for its own code (confirmed on the installed wheel's own metadata:
+  `License :: OSI Approved :: MIT License`, not read off a web page). It embeds ZDoom, which
+  descends from id Software's GPL-released Doom source, and ships **Freedoom** assets
+  (`freedoom1.wad` / `freedoom2.wad`) under the 3-clause BSD license. **We consume the published
+  PyPI wheel as an ordinary dependency and neither fork, patch, vendor nor redistribute the
+  engine or its WADs**, so the only live obligation is notice/attribution. If a future change
+  ever vendors or patches the engine, the GPL-descended terms become relevant and must be
+  re-checked — flagged here so that is a decision and not an accident.
+- No original id Software assets are used or needed; the stock scenarios run entirely on
+  Freedoom.
+
+#### Harness architecture: a new episodic loop, not a bent static one
+
+`benchmarks/common/harness.py::run_harness()` is a **static-dataset** loop: filter a frozen item
+list, call the backend once per item, score against gold labels, write a bundle. ViZDoom is
+closed-loop — the item sequence is generated by the environment *in response to the model's own
+actions*, and there is no gold label. Threading an `if episodic:` branch through a function that
+JevBench, jabr-v2 and ScreenSpot-v2 all depend on would be the wrong shape.
+
+**Reuse, unchanged:** `build_backend()`, `make_arg_parser()` (plus new flags),
+`benchmarks/common/evidence.py::write_bundle()`, `eval/metrics.py`.
+
+**New:** `benchmarks/common/episodic.py::run_episodic_harness()` — same backend contract, same
+evidence-bundle contract, different loop and a different results summary (episode outcomes and
+rubric-agreement, rather than accuracy over a frozen set). `benchmarks/vizdoom/` then mirrors
+`benchmarks/screenspot_v2/`'s structure exactly:
+
+```
+benchmarks/vizdoom/
+  env.py        DoomEnvironment + DoomSnapshot; stock cfg, buffers, seed, frameskip, step cap
+  observe.py    observe_text(snap) -> str            (Von-faithful formatter)
+                observe_frame(snap, dir) -> (str, path)  (vision arm; PNG written per tick)
+  rubric.py     the verbatim Von instructions/criteria, the `none` variant, and
+                rubric_action(snap) -> str  (the oracle / DAgger teacher)
+  run.py        CLI: --arm text|vision, --rubric von|none, --scenario, --backend, --seeds
+  README.md     what was verified vs. what was not, screenspot_v2/README.md's standard
+  NOTICE.md     Von Apache-2.0 attribution for the vendored protocol constants
+```
+
+#### Implementation checklist, in order
+
+Ordered so each step is verifiable before the next, and so the first real number arrives without
+waiting on the GPU. **Nothing below is started.**
+
+1. **Add `vizdoom>=1.3.1` to `pyproject.toml`** and confirm `uv sync` resolves it against the
+   existing `torch==2.14.0+cu130` pin without touching torch (same check 5.2b ran for
+   `torchvision`). Evidence: the resolver output.
+2. **`benchmarks/vizdoom/env.py`** — `DoomEnvironment` and `DoomSnapshot`, reproducing Von's
+   config exactly: stock `.cfg` from `vizdoom.scenarios_path`, `RES_320X240`, `RGB24`, HUD off,
+   crosshair on, labels + depth on, sound off, window invisible, per-scenario 3-button action
+   set, `set_seed()`, `tics=4`, 300-step cap. **Assert `get_available_buttons()` matches the
+   declared action names in order** — a silent mismatch here maps every action to the wrong
+   button and produces a plausible, entirely wrong score.
+3. **`rubric.py` + the oracle baseline, and run it before anything else.** Implement
+   `rubric_action(snap)`, then run it as a policy on all 16 published seeds. **This is the first
+   real number and needs no model, no GPU and no checkpoint** — a few CPU-seconds. Commit the
+   evidence bundle. Also re-commit the random-policy baseline from this section as a bundle so
+   the numbers above stop living only in PRD prose (rule 10).
+4. **`observe.py::observe_text()`**, byte-faithful to `format_doom_state()`: the five position
+   buckets, four size buckets, four depth buckets, top-3 monsters / top-2 items by apparent size,
+   the `MONSTERS`/`ITEMS`/`PRETTY_NAMES` sets, the one-step `"Previous executed action"` memory,
+   and the per-scenario preamble. Unit-test the bucket boundaries against hand-built snapshots.
+5. **`benchmarks/common/episodic.py::run_episodic_harness()`** — the shared loop, plus a mock
+   backend so the whole path (env → observe → backend → step → metrics → bundle) runs with no
+   torch, no checkpoint and no GPU, exactly as `screenspot_v2` was validated before a vision
+   checkpoint existed (13a.12).
+6. **Text arm, for real.** `--arm text --backend decoder-multischema --checkpoint-dir
+   checkpoints/ekvachan-decoder-qwen-benchcorpus`, both scenarios, both rubric conditions, all 16
+   published seeds. **This is the milestone**, and it needs nothing that does not already exist.
+   Report: mean kills, mean survival, per-seed values, the random and rubric-oracle baselines
+   beside them, `rubric_agreement` accuracy / Brier / ECE, p50 / p95 per-decision latency, and
+   the count of out-of-schema responses (which are a real failure mode here — an unparseable
+   action wastes a tick, and the harness must record it, never silently repair it, per 8.1a's
+   no-schema-repair rule).
+7. **Write the results into PRD §13a and STATUS.md with their manifest paths**, win or lose
+   (8.1's standing commitment), including the survival caveat from Finding 2 stated in the text
+   rather than a footnote.
+8. **Vision arm**, once `checkpoints/ekvachan-decoder-qwen-vision` (13a.11) has landed and
+   ScreenSpot-v2 (13a.12) has produced its first real number. `observe_frame()` writes each tick's
+   `screen_buffer` to a PNG and returns a short text state (status line only, no label/depth
+   prose — otherwise the vision arm is just the text arm with a picture attached, which measures
+   nothing). Same seeds, same scenarios, same metrics. **Reported as an ekVachan-only capability
+   result, explicitly not as a Von comparison**, because Von cannot run it.
+9. **Optional, after 8:** §5.3b's DAgger round 0 — emit `(text, frame, rubric_action)` triples
+   from the step-6 rollouts, which are already on-policy for the current checkpoint. Per §9's
+   boundary rule this data stays in this repo, under `training/`, not in better-jev-bench.
+
+**Deliberately out of scope:** StarCraft (`tsai-sc`) and browser-use/jev-ultrafast (8.1 items 3
+and 4) — both are separate harnesses with their own design questions, and neither blocks the Von
+comparison, which is what makes ViZDoom worth doing first.
 
 ### 8.2 Evidence discipline
 Every benchmark run ships as a signed evidence bundle (raw outputs, seeds, prompt/state hashes, weight hash, timestamp) in `results/` — matching the norm this ecosystem has already converged on (Rizzo Flow's evidence traces, jabr-v2's "frozen benchmark" design, HEIST//ONE's evidence traces, JevBench's frozen-and-hashed test cases). This is non-negotiable for credibility in a field this benchmark-literate.

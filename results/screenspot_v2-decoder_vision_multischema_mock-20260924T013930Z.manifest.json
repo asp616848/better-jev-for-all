@@ -1,0 +1,51 @@
+{
+  "benchmark": "screenspot_v2",
+  "run_id": "screenspot_v2-decoder_vision_multischema_mock-20260924T013930Z",
+  "timestamp_utc": "2026-09-24T01:39:30Z",
+  "seed": 0,
+  "harness_git_commit": "80ec37a3280778a0e9ff48eca46f2903556833ea",
+  "dataset": {
+    "source_repo": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2",
+    "license": "Apache-2.0 (verified 2026-09-24 via HF Hub API cardData['license'], independently of better-jev-bench's own verification in datasets/screenspot_v2/manifest.toml; obligation: attribution, see NOTICE.md)",
+    "vendored_via": "better-jev-bench's `bjb export --slice heldout --datasets screenspot_v2` (better-jev-bench is eval-only for this dataset -- `--slice public` emits 0 records, verified by running it -- see loader.py's module docstring)",
+    "vendored_file": "vendored/heldout.jsonl",
+    "n_exported_records": 858,
+    "n_reframed_items": 858,
+    "n_excluded_pool_too_small": 0,
+    "pool_size_histogram": {
+      "2": 412,
+      "3": 310,
+      "4": 92,
+      "5": 39,
+      "6": 5
+    },
+    "note": [
+      "858 real exported items (not the manifest's headline 898 = 40 public + 858 heldout -- the 40 public rows are structurally unreachable via `bjb export --slice public` for an eval_only dataset, and `--slice heldout` only ever reads the 858-row heldout file, not both -- see loader.py). Reframed from 356 distinct images into 858 genuine N-way grounding-as-choice items (N = 2 to 6, real per-image annotated-element pools, no invented distractors); 0 items excluded for too-small a pool on this real export. See benchmarks/screenspot_v2/README.md."
+    ],
+    "images": "referenced from better-jev-bench's content-addressed cache, not vendored into this repo -- see README.md's 'Vendoring: images vs. metadata'."
+  },
+  "schema_filter": {
+    "max_options": 26,
+    "unsupported_reasons": {}
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_vision_multischema_mock",
+    "max_options": 26,
+    "note": "NOT a trained model -- a deterministic keyword-overlap heuristic that never looks at the image (it has no mechanism to). Used only to prove the vision multischema harness pipeline (filter -> call -> score -> evidence bundle, including real image-path resolution) works end to end without torch, transformers, peft, or a checkpoint on disk."
+  },
+  "results": {
+    "n_items_considered": 858,
+    "n_supported_by_multischema_cap": 858,
+    "n_unsupported": 0,
+    "n_supported_with_image": 858,
+    "n": 858,
+    "accuracy": 0.40559440559440557,
+    "brier": 0.6002880423515345,
+    "ece": 0.022684722684722693,
+    "is_complete_benchmark_score": true,
+    "note": "n_supported_by_multischema_cap is how many items a decoder/multischema model could legitimately attempt (a 'choice' item with between 2 and max_options=26 options, whose gold label is one of them). n_supported_with_image is how many of those items also carry a real screenshot (PRD.md 5.2b/13a.11) -- only decoder-vision-multischema[-mock] backends actually use it; every other backend here ignores an item's image the same way it ignores `instructions` if it doesn't need it. is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "screenspot_v2-decoder_vision_multischema_mock-20260924T013930Z.raw",
+  "harness_selftest": false
+}
