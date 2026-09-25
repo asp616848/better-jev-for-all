@@ -293,15 +293,19 @@ class _CudaGraphRunner:
     this box at all or lost to eager once warmed) turned into real,
     integrated code.
 
-    **Written without GPU access and never executed** -- the session that
-    wrote this class has no CUDA device available to it at all (see PRD.md
-    13a.22's own caveat for the same constraint on an earlier fix). It is
-    gated behind `RoutingDecoderModel`'s `use_cuda_graphs` flag, OFF by
-    default, so its mere existence changes nothing about default behavior.
-    Before this is ever turned on by default -- or trusted at all --
-    PRD.md 13a.29's own required next steps still apply in full and are
-    now MORE important, not less, because this code has had zero real
-    execution: diff this class against the actual working prototype
+    **Written without GPU access and never executed** at first (see PRD.md
+    13a.22's own caveat for the same constraint on an earlier fix), then
+    GPU-validated for real: PRD.md 13a.31 fixed two real bugs found only
+    once this ran on hardware (`mm_token_type_ids` in the real processor
+    output, real `pad_token_id` padding), and PRD.md 13a.33 ran it against
+    the full JevBench (231/231) + jabr-v2 (944/944) + `bjb evaluate`
+    corpora and ViZDoom, finding accuracy identical to eager within noise
+    and a real ~15% E2E speedup on real request shapes. **ON by default as
+    of PRD.md 13a.34** (`use_cuda_graphs`/`EKVACHAN_USE_CUDA_GRAPHS`, still
+    overridable per-instance or via env var for anyone who needs to force
+    eager). Before trusting any further change to this class,
+    PRD.md 13a.29's own required next steps still apply in full: diff this
+    class against the actual working prototype
     scripts (`/tmp/ekvachan-task1/cg_*.py` as of PRD.md 13a.29) for any
     divergence from what was empirically proven there, a full
     JevBench/jabr-v2 correctness gate at PRD.md 13a.26's bar, and a real
@@ -692,14 +696,17 @@ class RoutingDecoderModel:
             "EKVACHAN_TEXT_ADAPTER", TEXT_ADAPTER_PENDING_SENTINEL
         )
 
-        # PRD.md 13a.29: manual CUDA-graph capture/replay, OFF BY DEFAULT.
-        # See `_CudaGraphRunner`'s own docstring for the full design and the
-        # explicit "written without GPU access, never executed" caveat --
-        # this flag existing changes nothing about default behavior until
-        # someone explicitly opts in, on purpose, until PRD.md 13a.29's
-        # required correctness gate + real E2E measurement have both run.
+        # PRD.md 13a.29-13a.33: manual CUDA-graph capture/replay. ON BY
+        # DEFAULT as of PRD.md 13a.34 -- the required correctness gate
+        # (JevBench 231/231 + jabr-v2 944/944 + bjb evaluate + ViZDoom, all
+        # against this exact class) and real E2E measurement (~15% faster
+        # on real request shapes, accuracy identical within noise) both ran
+        # and passed. Set EKVACHAN_USE_CUDA_GRAPHS=0 (or pass
+        # use_cuda_graphs=False) to force eager -- e.g. for a non-CUDA dev
+        # box, or to isolate a regression. See `_CudaGraphRunner`'s
+        # docstring for the full design and validation trail.
         if use_cuda_graphs is None:
-            use_cuda_graphs = os.environ.get("EKVACHAN_USE_CUDA_GRAPHS", "") not in ("", "0", "false", "False")
+            use_cuda_graphs = os.environ.get("EKVACHAN_USE_CUDA_GRAPHS", "1") not in ("0", "false", "False")
         self._cuda_graph_runner = None
         if use_cuda_graphs:
             if self.device != "cuda":

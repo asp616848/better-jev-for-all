@@ -1667,6 +1667,21 @@ Measuring real JevBench-shaped multi-option choices (n=125 samples of JevBench i
 Evaluated the `RoutingDecoderModel` using the throwaway HTTP harness across the full 14-task sweep. Eager mode perfectly reproduced the known 13a.20 stage3 baseline (Generality 78.94 / Intelligence 66.39 / Calibration 88.64) within standard noise.
 
 
+### 13a.34 CUDA graphs flipped ON by default (2026-09-25)
+
+Decision made by the project owner, on the strength of 13a.33's full-corpus gate: `RoutingDecoderModel`'s CUDA-graph fast path (13a.29-13a.33) is now **on by default** rather than opt-in.
+
+**Basis** -- all four of 13a.33's checks, against the real serving object, not a prototype:
+- JevBench 231/231 + jabr-v2 944/944: accuracy identical between eager and graph (70.99% / 85.49%), 3+9 item-level disagreements out of 1175, max probability difference 0.063.
+- `bjb evaluate` full 14-task sweep: reproduces the 13a.20 stage3 baseline once pointed at the corrected checkpoint symlink (the 68.83%/84.22% artifact in 13a.33's first draft was a stale-symlink environment bug, not a graphs bug -- see that section).
+- ViZDoom: eager 8.75 vs graph 8.125 kills (Defend the Center), exact match on Health Gathering survival time -- sequential/episodic state isn't corrupted by graph replay.
+- E2E on real JevBench-shaped requests: graph 111.67ms p50 / 131.22ms p95 vs eager 130.72ms p50 / 155.90ms p95, a real ~15% reduction, not the smaller ~45ms figure from 13a.31's short synthetic prompt (that number does not represent production traffic and should not be quoted as the expected default-on latency).
+
+**What changed**: `serve/inference.py`'s `RoutingDecoderModel.__init__` -- the `use_cuda_graphs=None` resolution now defaults to `True` (`os.environ.get("EKVACHAN_USE_CUDA_GRAPHS", "1") not in ("0", "false", "False")`), inverted from 13a.29-13a.33's off-by-default. `EKVACHAN_USE_CUDA_GRAPHS=0` (or `use_cuda_graphs=False`) still forces eager -- for a non-CUDA dev box, or to isolate a future regression. The `_CudaGraphRunner`'s fail-closed behavior (13a.30) is unchanged: any `ensure_adapter()` failure still permanently falls back to eager for the rest of the process, it just now needs to fire from a different starting default.
+
+**Not re-validated by this pass**: no new GPU run was performed to make this change -- it is a one-line default flip on top of 13a.33's already-passed gate, verified by `py_compile` only. README's latency section updated to state ~112ms p50 as the new default-path number (previously shown as the graphs-on alternative to a ~131ms default).
+
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
