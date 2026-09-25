@@ -1682,6 +1682,20 @@ Decision made by the project owner, on the strength of 13a.33's full-corpus gate
 **Not re-validated by this pass**: no new GPU run was performed to make this change -- it is a one-line default flip on top of 13a.33's already-passed gate, verified by `py_compile` only. README's latency section updated to state ~112ms p50 as the new default-path number (previously shown as the graphs-on alternative to a ~131ms default).
 
 
+### 13a.35 Launch prep: GPU hardware redacted from public docs, Hugging Face publishing scaffolded (2026-09-25)
+
+**GPU hardware name removed from every authored doc/code file**, per the project owner's explicit pre-launch request. `PRD.md`, `STATUS.md`, and `training/vision_class_swap_control.py` had the specific GPU model named in several places (13a.9/13a.10's cost tables, 14 Q1's hardware record, 13a.22/13a.26's live-verification notes); all replaced with generic "training server's GPU" / "datacenter-class GPU" language. Two committed evidence-bundle manifests (`results/vision-path-probe-*`, `results/multitoken-scheme-probe-*`) had a `device_name` field with the same name; redacted explicitly (`"[redacted per project policy - see PRD 14 Q1]"`) rather than silently overwritten, since Section 8.2 treats these as provenance records. Vendored third-party benchmark data and `uv.lock` were left untouched (coincidental substring matches in hashes/URLs, not this project's own content).
+
+**This directly conflicts with 14 Q1's own stated position** ("every evidence bundle Section 8.2 commits to shipping should name the hardware its timings were measured on, ... worth fixing ... for reproducibility") -- noted here rather than silently overridden. The actual hardware/driver/compute-capability values still exist in git history (every commit before this one) and are recorded outside this public repo; nothing about the real measurements changed, only whether the specific model name is stated in public-facing text going forward. Whether 14 Q1's reproducibility stance should be formally revised (vs. treated as a one-time public-launch exception) is left open.
+
+**Hugging Face publishing scaffolded, not yet run** (no HF/GPU access this session, same constraint as every other piece of code this session has written):
+- `hf_model/README.md` -- model card for a new HF model repo (`abhi6168/ekvachan-decoder`) holding both LoRA adapters, mirroring this document's real 70.99%/85.49% JevBench/jabr-v2 numbers and the 112ms/131ms p50/p95 latency figures.
+- `hf_space/app.py` + `Dockerfile` + `README.md` -- a Gradio demo Space (`abhi6168/ekvachan`) that clones this repo at a pinned commit and runs `serve.inference.RoutingDecoderModel` directly (not a reimplementation), intended for HF's free ZeroGPU tier. Explicitly states in its own UI that ZeroGPU's queue/cold-start overhead makes its latency non-representative of the benchmarked numbers -- do not let anyone quote Space latency as the real figure.
+- `scripts/publish_to_huggingface.py` -- the actual upload script (checkpoints -> model repo, `hf_space/` -> Space repo), meant to be run by hand on the GPU box after `huggingface-cli login`.
+
+**Not verified by this session, at all**: none of this has been run. Real remaining steps, in order: (1) run `publish_to_huggingface.py` for real; (2) manually set the Space's Hardware to ZeroGPU in its Settings tab (not API-settable, per the script's own docstring); (3) confirm the Docker build succeeds and a real request round-trips end to end; (4) sanity-check that `snapshot_download`'s local layout actually matches what `RoutingDecoderModel.__init__` expects -- if it doesn't, the class's own `FileNotFoundError` on a missing `manifest.json` will say so at Space startup, read the logs rather than guessing.
+
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
