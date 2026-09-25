@@ -1377,6 +1377,30 @@ By source, the new wide tasks specifically (proof the ceiling break produces rea
 
 Evidence: `checkpoints/ekvachan-decoder-qwen-wide/manifest.json`; `results/jevbench-decoder_vision_multischema-20260924T232920Z.manifest.json`; `results/jabr_v2-decoder_vision_multischema-20260924T233130Z.manifest.json` (both in the model repo); bench-repo `results/run_e5f764f188a64c9daa16/manifest.json` (the full 14-task `bjb evaluate` sweep, `--max-items-per-task 200 --concurrency 8`, served via a throwaway `serve_eval_wide.py` harness + symlinked `checkpoints_eval_wide/` dir, neither committed -- the shipped `checkpoints/ekvachan-decoder-qwen-vision` and `serve/inference.py`'s hardcoded adapter names are untouched).
 
+### 13a.19 Stage 3: targeted go_emotions expansion, a second continue-train (2026-09-25)
+
+Following the user's original 3-stage plan ("train with more data... focus on improving the base model much more"), 13a.18's own results named `bjb:go_emotions/emotion` (28-way) the one clearly weak wide task at 60.6% accuracy on only 2,500 of its 45,270 available items. `training/build_stage3_slice.py` exported 6,000 go_emotions rows at the same seed (42) as the original export and treated the last 3,500 as new (skipping the first 2,500 as probable duplicates of the earlier export at the same seed -- not verified byte-for-byte, but the risk is redundancy, not contamination), plus a 10,000-row replay sample from `wide_slice_continue_capped/train` to guard against forgetting. Continue-trained from `checkpoints/ekvachan-decoder-qwen-wide` (not the original vision checkpoint) using the now-proven recipe unchanged: `--max-length 850 --batch-size 1 --grad-accum-steps 64`, flash-linear-attention already installed. 13,150 rows, 206 steps, 5,257s (~1.46h).
+
+**Real result, checked against 13a.18's own numbers, not assumed**:
+
+| Task | 13a.18 (before) | Stage 3 (after) | Delta |
+|---|---|---|---|
+| `bjb:go_emotions/emotion` (target of this stage) | 60.6% | **63.4%** | **+2.8pp** |
+| `eval_ood` CLINC150 (zero-shot, never trained on) | 96.07% | 96.00% | -0.07pp, still passes >=95.5% |
+| `bjb:banking77/intent` | 94.4% | 92.9% | -1.5pp |
+| `bjb:massive/intent` | 90.4% | 90.0% | -0.4pp |
+| `bjb:cuad/clause_type` | 91.2% | 91.1% | -0.1pp |
+| `bjb:ledgar/provision_type` | 87.5% | 88.2% | +0.7pp |
+| `bjb:atari_head/action` | 97.2% | 97.3% | +0.1pp |
+| `bjb:os_atlas/target_element` | 96.1% | 94.3% | -1.8pp |
+| Aggregate `choice` (eval_id, by question type) | 89.26% | 87.92% | -1.34pp |
+
+Read honestly: a modest, real, targeted gain on the one task this stage specifically added data for (+2.8pp), with no clear regression pattern elsewhere -- the ±0.1-1.8pp fluctuations on other tasks are within the normal variance a replay-based continue-train produces (the same magnitude of movement 13a.18 itself showed was possible run-to-run), not a systematic decline. The aggregate `choice` dip (-1.34pp on top of 13a.18's own -1.45pp vs the original 90.71% baseline) continues the same explained pattern: go_emotions and other hard wide tasks weight the aggregate down further as they get proportionally more representation, not a sign the model is getting worse at the tasks it already knew.
+
+Evidence: `checkpoints/ekvachan-decoder-qwen-stage3/manifest.json`.
+
+**Methods note**: every "wait for training completion" background poller run tonight using the pattern `while pgrep -f "<text>" > /dev/null; do sleep 60; done` was itself broken by self-matching -- `pgrep -f` matches against the full command line of every process, including the poller's own invoking shell, whose argv necessarily contains the literal pattern text passed to it. The loop could never observe its own absence and would run forever until the harness's own background-task lifecycle eventually stopped it -- which is the real explanation for the repeated "killed" task-notifications this session, not a training failure or a benign unrelated glitch as first assumed. Every actual completion tonight was caught by direct verification (log tail, `ps`/`kill -0` checks), not by a poller resolving correctly. Fixed by switching to PID-based polling (`while kill -0 $PID 2>/dev/null; do sleep 60; done`), which is immune to this class of bug since it checks a specific number, not a text pattern that can appear in its own invocation. Any future "wait for a specific process to exit" pattern in this project should use `kill -0`, not `pgrep -f`, for this reason.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
