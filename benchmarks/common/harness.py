@@ -74,6 +74,7 @@ def build_backend(args: argparse.Namespace):
             Path(args.checkpoint_dir),
             base_model=args.base_model,
             apply_temperature=args.decoder_apply_temperature,
+            load_in_8bit=args.decoder_load_in_8bit,
         )
     if args.backend == "decoder-multischema-mock":
         return backends.DecoderMultischemaMockBackend(max_options=args.max_options or DECODER_MULTISCHEMA_MAX_OPTIONS)
@@ -145,6 +146,10 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
                          "straight through to it. Default: the checkpoint manifest's own recorded "
                          "max_pixels (PRD.md 5.2b: 256*28*28 caps any screenshot at 180 image "
                          "tokens, the training-time default once vision rows are present).")
+    p.add_argument("--decoder-load-in-8bit", action="store_true",
+                    help="decoder-multischema only (PRD.md 13a.26 experiment): load the frozen "
+                         "base weights in int8 via bitsandbytes, QLoRA-style (adapters stay "
+                         "full precision). Off by default; the fp16 path is untouched.")
     p.add_argument("--decoder-apply-temperature", action="store_true",
                     help="decoder-multischema/decoder-vision-multischema only: apply the checkpoint "
                          "manifest's fitted temperature instead of raw probabilities. Off by "

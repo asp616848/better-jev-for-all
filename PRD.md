@@ -1490,6 +1490,37 @@ Decision read (no action taken this pass): step 5 dominates in every regime meas
 
 Evidence: scratch scripts `/tmp/ekvachan-task1/profile_stages.py`, `profile_e2e.py` (not committed, same spirit as prior throwaway harnesses); raw per-run JSON printed to those runs' stdout.
 
+### 13a.25 Part A: set_adapter skip ships, HTTP dispatch isolated, async rewrite declined (2026-09-25)
+
+**A1 -- skip redundant `set_adapter()`.** Inspected first against the real loaded object (not assumed): `self.model.active_adapter` returns the active name as a plain string (`'benchcorpus'`), and a microbench proved PEFT never short-circuits -- redundant `set_adapter('benchcorpus')` costs 8.74/10.47ms p50/p95, a real switch from vision 8.41/14.77ms, i.e. identical. `predict_choice` now checks `active_adapter != adapter_name` under the existing lock and only calls `set_adapter()` on a real change (fail-safe toward the old path: anything but an exact string match still sets). Before/after, same 13a.24 methodology (n=25 in-process + HTTP E2E, cuda-synced):
+
+| Case | set_adapter p50 before -> after | In-server total p50 before -> after | Real `predict_choice` wall p50 | HTTP E2E p50/p95 before -> after |
+|---|---|---|---|---|
+| Benchcorpus 10-opt | 8.45ms -> **0.0007ms** | 82.84ms -> **73.91ms** (-8.9ms, -10.7%) | 81.56ms -> 79.45ms | (n=30) 102.44/113.12ms -> **78.8/96.5ms** |
+| Wide-slot 10-opt | (13a.24: ~8-13ms) -> **0.0006ms** | 80.92ms -> **70.48ms** (-10.4ms) | 91.05ms -> 70.99ms | (n=10) 86.52/96.59ms -> **76.0/85.6ms** |
+
+E2E moved more than the in-server saving because the box was quieter in the after-window (min 65.2ms benchcorpus) -- the fix's attributable effect is the in-process -9 to -10ms; E2E is reported as consistent, not as the claim. 13a.23's live routing re-check re-run against the new code: 77-option benchcorpus request still HTTP 501 with the identical message, wide-slot 77-option still HTTP 200 with bit-identical probabilities -- the skip did not touch routing.
+
+**A2 -- HTTP/dispatch directly decomposed (one model load, live TestClient + microbenches, nothing re-derived):** pydantic `SystemOneRequest` validation 1.7/1.8us (n=2000), JSON parse+serialize 11.1/11.4us -- both negligible. In-process ASGI via starlette TestClient (real app + model, minus TCP): 74.33/85.87ms p50/p95 vs in-same-process `predict_choice` 69.35/74.78ms, isolating the **sync-def threadpool + starlette hop at ~4.96ms p50**; loopback TCP + urllib client ≈ 4.5ms (live E2E 78.8 minus TestClient 74.33, cross-run). So 13a.24's ~19ms derived stage-1 was ~5ms hop + ~4.5ms network/client + ~10ms of that older window's contention inflation. An `async def` endpoint would save at most the ~5ms hop, but `predict_choice` blocks on torch + `self._lock` and would need `run_in_threadpool` wrapping to stay correct -- which re-adds a hop -- so the net is ~zero for real risk: **declined, no change made.**
+
+GPU occupancy: other users' ~12GB constant across every run in this section; our process +9.7GB when serving.
+
+### 13a.26 Part B: int8 quantization experiment -- 4.7x SLOWER, accuracy parity moot, not shipped, no 4-bit attempt (2026-09-25)
+
+Method: new `--decoder-load-in-8bit` flag on the text-only `decoder-multischema` backend (default off; fp16 path untouched), QLoRA-style -- frozen base in int8 via bitsandbytes==0.50.2 (venv-only, not added to pyproject), LoRA adapters full precision; tried on benchcorpus first per the handoff. Precision is recorded in each evidence manifest's `model.quantization`.
+
+| Check | fp16 | int8 | Delta |
+|---|---|---|---|
+| Backend predict wall, 10-opt (n=25) p50/p95 | 72.64 / 81.13ms | **342.81 / 369.20ms** | **+270ms, 4.7x slower** |
+| JevBench accuracy (n=231, complete) | 0.6840 | 0.6926 | +0.86pp (noise) |
+| JevBench Brier / ECE | 0.4062 / 0.1185 | 0.4099 / 0.1261 | flat |
+| jabr-v2 accuracy (n=944, complete) | 0.8517 | 0.8528 | +0.11pp (parity) |
+| jabr-v2 Brier / ECE | 0.2088 / 0.0412 | 0.2099 / 0.0411 | flat |
+
+Accuracy parity HOLDS on both benchmarks -- but it is moot: int8 loses catastrophically on the exact objective that motivated it (bitsandbytes int8 GEMMs don't take the bf16 tensor-core path at batch-1 on this L40S; dequantize overhead dominates). Verdict: **do not ship.** The handoff's 4-bit condition (int8 latency win + accuracy margin) is unmet on the first clause, so **no nf4 attempt.** The CLINC150 >= 95.5% absolute gate is additionally not applicable to benchcorpus by construction (manifest cap 26 vs 151-way items -- the schema filter correctly declines them); it binds wide/stage3-class checkpoints and was not run since latency killed int8 first. Single-prompt spot check agreed (fp16 topic-00 p=0.216 vs int8 0.236, same argmax).
+
+Evidence: `results/jevbench-decoder_multischema-20260925T074911Z.manifest.json` (fp16), `results/jevbench-decoder_multischema-20260925T075407Z.manifest.json` (int8), `results/jabr_v2-decoder_multischema-20260925T075119Z.manifest.json` (fp16), `results/jabr_v2-decoder_multischema-20260925T080040Z.manifest.json` (int8).
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:

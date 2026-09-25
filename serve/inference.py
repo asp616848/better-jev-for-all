@@ -588,7 +588,16 @@ class RoutingDecoderModel:
         messages = [{"role": "user", "content": content}]
 
         with self._lock:
-            self.model.set_adapter(adapter_name)
+            # Skip the adapter switch when it would be a no-op (PRD.md
+            # 13a.24 measured a redundant set_adapter() at 8-13ms p50 --
+            # PEFT re-walks every LoRA module even when the requested
+            # adapter is already active, verified against the real loaded
+            # object: `self.model.active_adapter` returns the active name
+            # as a plain string). Fail-safe direction: anything but an
+            # exact string match falls through to the set call, i.e. the
+            # pre-13a.25 behavior.
+            if self.model.active_adapter != adapter_name:
+                self.model.set_adapter(adapter_name)
 
             prompt = self.processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True, enable_thinking=False

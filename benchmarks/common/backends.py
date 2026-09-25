@@ -461,6 +461,7 @@ class DecoderMultischemaBackend:
         base_model: str | None = None,
         device: str | None = None,
         apply_temperature: bool = False,
+        load_in_8bit: bool = False,
     ):
         # Check the checkpoint exists before importing the ML stack, so a
         # wrong --checkpoint-dir fails with a clear FileNotFoundError even in
@@ -493,7 +494,21 @@ class DecoderMultischemaBackend:
         self.tokenizer = AutoTokenizer.from_pretrained(adapter_dir)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-        base = AutoModelForCausalLM.from_pretrained(base_model_name, dtype=torch.bfloat16)
+        # PRD.md 13a.26 experiment flag (default off): QLoRA-style inference --
+        # the frozen base weights load in int8 (bitsandbytes) while the LoRA
+        # adapters stay at full precision; never the reverse. Off by default
+        # so every existing caller gets the byte-identical fp16 path.
+        self.load_in_8bit = load_in_8bit
+        if load_in_8bit:
+            from transformers import BitsAndBytesConfig
+
+            quant_config = BitsAndBytesConfig(load_in_8bit=True)
+            base = AutoModelForCausalLM.from_pretrained(
+                base_model_name, quantization_config=quant_config,
+                dtype=torch.bfloat16, device_map="auto",
+            )
+        else:
+            base = AutoModelForCausalLM.from_pretrained(base_model_name, dtype=torch.bfloat16)
         self.model = PeftModel.from_pretrained(base, adapter_dir)
         self.model.to(self.device)
         self.model.eval()
@@ -509,6 +524,7 @@ class DecoderMultischemaBackend:
             "base_model": self.base_model_name,
             "architecture": self.manifest.get("architecture"),
             "max_options": self.max_options,
+            "quantization": "int8-bitsandbytes-base" if self.load_in_8bit else None,
             "temperature_applied": self.apply_temperature,
             "temperature": self.temperature if self.apply_temperature else None,
             "calibration_note": (
