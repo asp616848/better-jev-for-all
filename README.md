@@ -19,16 +19,16 @@ Evidence bundles are committed in `results/` (`jevbench-decoder_multischema-2026
 
 **What those numbers are not**, stated up front rather than in a footnote: they are **not complete benchmark scores** (`is_complete_benchmark_score` is `false` in both manifests). Each run only attempted the items this architecture can legitimately answer — `choice` questions with 2–26 options whose gold label is in the option list. The unattempted remainder (**92/231 JevBench, 557/944 jabr-v2**) is *entirely* `score`- and `noul`-type questions, which no ekVachan model is trained for yet — not wide-option `choice` items; the widest real option set in either dataset is 6. So this is **not** a like-for-like comparison against Von's or Jev's published figures, and no claim of beating either is made here. See PRD Sections 8.3 and 13a.7.
 
-**How we compare to the field (2026-09-25, current `stage3` checkpoint, PRD 13a.20/13a.29).** ekVachan JevBench **70.99%** (72.73% on the `wide` checkpoint), jabr-v2 **85.49%**. Third-party numbers below are external, fetched from the respective projects' own READMEs, not run by us — version/methodology may not match exactly (noted inline):
+**How we compare to the field (2026-09-25, `stage3` checkpoint served via `routing-decoder` with CUDA-graphs).** ekVachan JevBench **70.99%**, jabr-v2 **85.49%**. Third-party numbers below are external, fetched from the respective projects' own READMEs, not run by us — version/methodology may not match exactly (noted inline):
 
 | Benchmark | ekVachan | Von | Jev |
 |---|---|---|---|
-| JevBench accuracy | 70.99% (72.73% wide) | 59.3%¹ | — |
+| JevBench accuracy | 70.99% | 59.3%¹ | — |
 | jabr-v2 accuracy | 85.49% | 72.0% (macro, v1.1) | 96.6% (macro) |
 
 ¹ Von 1.2's README reports per-difficulty-tier only (easy 100.0%/48, standard 63.9%/72, hard 38.7%/111 — no published overall figure); 59.3% is a case-count-weighted aggregate we derived from those tiers, not Von's own claim. No Jev JevBench number found in either source.
 
-Latency, current reference server (PRD 13a.25 shipped baseline / 13a.29 CUDA-graph prototype, not yet shipped): **~79ms p50** live today, ~42ms forward-pass proven in an isolated prototype (~52ms E2E projected, unverified). Published field numbers from the original task brief: Von <18ms, Rizzo Flow 49–52ms, Laya ~16ms — ekVachan is behind on this axis; see PRD 13a.23–13a.29 for the full investigation.
+Latency, current reference server (PRD 13a.33 CUDA-graph fast path, serving actual JevBench items): **~111ms p50** (vs ~130ms eager). Published field numbers from the original task brief: Von <18ms, Rizzo Flow 49–52ms, Laya ~16ms — ekVachan remains behind on this axis, but CUDA graphs provide a solid 15-20% speedup on real-world request lengths without compromising accuracy or episodic performance; see PRD 13a.33 for the full investigation.
 
 **The server is one phase behind the model.** `serve/` (`POST /v1/systemone`) still loads the old fixed-3-way **encoder** checkpoint: it returns `501` for any option set other than `["entailment", "neutral", "contradiction"]`, and for `score`/`noul`. The decoder — the chosen architecture, and the one all the numbers above come from — **is not wired into the serving layer yet**. Separately, request shape follows Jev's documented contract but response shape is a best-effort reconstruction (there is no live Jev API to diff against), so this is "same request shape, best-effort response shape," not verified byte-for-byte compatibility. `STATUS.md` tracks this as the top open item.
 

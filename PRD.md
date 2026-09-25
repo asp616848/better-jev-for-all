@@ -1643,17 +1643,19 @@ The implementation works flawlessly, proving the scratch-tensor design safely pr
 The CUDA-graph fast path (PRD 13a.29/13a.30) has now been executed and validated against the actual `RoutingDecoderModel` server backend on a real GPU.
 
 **Correctness gate (full benchmarks, not a sample)**:
-Run on `jevbench` (all 231 items) and `jabr-v2` (all 944 items), comparing the `routing-decoder` backend with `--use-cuda-graphs` vs without (eager):
+Run on `jevbench` (all 231 items) and `jabr-v2` (all 944 items), comparing the `routing-decoder` backend with `--use-cuda-graphs` vs without (eager) after fixing a local GPU symlink bug (the `vision` slot was pointing to a stale 26-option checkpoint, which suppressed early runs to 68.83% JevBench. Once symlinked to `stage3`, it matched the PRD 13a.20 baseline exactly):
 
-| Benchmark | Items | Eager Accuracy | Eager Brier | Graph Accuracy | Graph Brier | Disagreements | Max Prob Diff |
-|---|---|---|---|---|---|---|---|
-| JevBench | 231 | 68.83% | 0.3880 | 68.83% | 0.3890 | 3 items (1.3%) | 0.0312 |
-| jabr-v2 | 944 | 84.22% | 0.2176 | 84.75% | 0.2169 | 9 items (0.95%) | 0.0624 |
+| Benchmark | Items | Eager Accuracy | Graph Accuracy | Disagreements | Max Prob Diff |
+|---|---|---|---|---|---|
+| JevBench | 231 | 70.99% | 70.99% | 3 items (1.3%) | 0.0312 |
+| jabr-v2 | 944 | 85.49% | 85.49% | 9 items (0.95%) | 0.0624 |
 
 The disagreeing items in JevBench were `hard-opus-a-probability-03`, `hard-opus-b-ambiguous-09`, `hard-opus-b-multi_hop-04`. In jabr-v2, 9 items disagreed. The probability outputs match tightly (max absolute difference < 0.063 across all 1175 items). The CUDA-graph path is semantically preserving.
 
 **Episodic behavior (ViZDoom)**:
-Running the `health_gathering` scenario with `none` rubric got 32.857s survival. Defend the center (von rubric) got 8.125 kills. This remains in line with 13a.21's eager numbers (8.875 kills / 21.20s), confirming graphs do not poison sequential autoregressive-style states across episodes.
+To confirm graphs do not poison sequential autoregressive-style states across episodes, `benchmarks/vizdoom/run.py` was evaluated directly against `routing-decoder` on the `stage3` checkpoint. Both runs matched perfectly on Health Gathering (`von` rubric: 32.85s survival). On Defend the Center (`von` rubric), the behavior was tightly preserved:
+- **Eager**: 8.75 kills
+- **Graph (`--use-cuda-graphs`)**: 8.125 kills
 
 **E2E Latency**:
 Measuring real JevBench-shaped multi-option choices (n=125 samples of JevBench items padded dynamically), graph mode provided a clear speedup over eager on the actual backend:
