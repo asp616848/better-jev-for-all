@@ -1539,6 +1539,40 @@ Evidence: `results/jevbench-decoder_multischema-20260925T074911Z.manifest.json` 
 
 GPU occupancy: other users' ~12GB constant across every run in this section.
 
+### 13a.28 vLLM prototype: numerically equivalent, routing works, NOT faster -- NO-GO on latency (2026-09-25)
+
+Isolated prototype only: nothing on the shipped path touched (`serve/` and all benchmarks byte-identical before/after). Question: can vLLM serve this exact model faster than the PyTorch/PEFT reference stack, as an alternative to the Section 7 Rust/ONNX rewrite.
+
+**Step 0 -- isolated install.** Separate venv `/data/interns/studentiotlab/ekvachan-vllm-venv` (repo venv/pyproject untouched): **vLLM 0.30.0, torch 2.13.0+cu130** (matches box driver 580/CUDA 13.0), xgrammar 0.2.8, ninja 1.13.2. vLLM 0.30 natively registers `Qwen3_5ForCausalLM` and `Qwen3_5ForConditionalGeneration`. Environment friction, each real: v1 engine needs spawn (`__main__` guard); `gpu_memory_utilization=0.30` leaves only 92 mamba cache blocks vs default `max_num_seqs=256` (hard error -- run with 0.35/32); EngineCore needs venv `ninja` + pip-wheel `nvcc` on PATH; flashinfer's sampler JIT fails against the wheel nvcc's headers, so `VLLM_USE_FLASHINFER_SAMPLER=0` (prebuilt fallback). Each misconfiguration costs a full 5-8min engine restart (weights + warmup + vLLM's own torch.compile, which notably succeeds where raw 13a.27 torch.compile failed).
+
+**Step 1 -- loads and runs.** Surprise: HF's `Qwen/Qwen3.5-4B` config resolves to the VL `Qwen3_5ForConditionalGeneration` class, so the RAW causal-LM adapter keys would not match -- the validated `-vlclass-remap` cache (13a.11's control, reused as-is, no new files) was accepted with no key errors. First LoRA forward 788ms, base 80ms, both emit 'A' = serving's choice on the same prompt.
+
+**Step 2 -- restricted-logit equivalence, probabilities not just argmax** (5 cases: 10-opt, 26-opt, 3 real 5-way JevBench items; API note: 0.30 moved guided decoding to `structured_outputs=StructuredOutputsParams(choice=...)`, and the default logprobs cap is 20 so the engine needs `max_logprobs=128`):
+
+| Case | Guided-choice vs serving | Prompt-logprobs vs serving |
+|---|---|---|
+| smoke10 | maxabs 0.000000 / mean 0.000000 | maxabs 0.019172 / mean 0.006091 |
+| smoke26 | maxabs 0.004340 / mean 0.000494 | maxabs 0.058823 / mean 0.005181 |
+| jev0 (5-way) | 0.000000 / 0.000000 | 0.009115 / 0.003646 |
+| jev1 (5-way) | 0.006247 / 0.002499 | 0.012468 / 0.004988 |
+| jev2 (5-way) | 0.017225 / 0.006896 | 0.008575 / 0.003430 |
+
+Argmax agrees on all 5 x both paths. Guided decoding over the same code letters is mathematically identical to the restricted-logit read on 2/5 cases to 6 decimals (mask-before-softmax, exactly as `_restricted_logit_result`'s docstring reasons) and bf16-kernel noise elsewhere -- the equivalence theory is confirmed empirically. The prompt-logprobs path (manual restrict/renormalize) also matches within ~0.01-0.06.
+
+**Step 3 -- multi-adapter routing works.** Vision adapter (VL-native keys, raw dir, no remap) loads alongside benchcorpus; per-request `LoRARequest` selection works; vLLM-vision vs serving-vision (dedicated repo-venv truth run) maxabs 0.006174 / mean 0.001877, argmax same. Alternating bench/vision x12: 72-139ms, first 79.0ms = steady p50 ~80ms -- **no switch penalty**, unlike PEFT's real-ms `set_adapter` (13a.25).
+
+**Step 4 -- latency, 13a.24 methodology (n=25, same 10-opt prompt/adapter, client-side wall):**
+
+| Path | p50 | p95 | min |
+|---|---|---|---|
+| vLLM plain generate (prefill + 1 token) | 90.81ms | 105.68ms | 80.59ms |
+| vLLM with `prompt_logprobs=64` (the read we'd ship) | **174.04ms** | 200.98ms | 152.73ms |
+| Reference: settled eager E2E (13a.27) | ~69-84ms | ~82-103ms | ~64-68ms |
+
+**Go/no-go: NO-GO as a latency play.** vLLM is numerically equivalent and operationally nicer (zero switch cost, guided decoding gives the restricted-logit math for free), but it is NOT faster where our cost lives: plain prefill+1 matches eager at best, and the logprob read we'd actually ship doubles latency to ~174ms. Root cause, stated plainly: our access pattern is 100% prefill-bound batch-1 scoring, while vLLM's engineering wins are decode-throughput (paged KV, continuous batching) -- it cannot fuse away the per-layer kernel-launch overhead 13a.27 measured, and its logprobs path visibly falls off the fast path. Operationally it also costs ~+12GB VRAM at the conservative 0.35 setting, 100-300s loads, and a 2.3s first guided call (xgrammar compile). Neighbors unaffected throughout (12.0GB before/after every run). The Section 7 server remains the target; vLLM's value would be serving-convenience, which is not the problem we have. Prototype scripts + logs: `/tmp/ekvachan-task1/vllm_*.py`, `vllm_prompts.json`, `vllm_vision_truth.json`.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
