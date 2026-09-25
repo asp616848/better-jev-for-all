@@ -1,0 +1,164 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-defend_the_center-von-decoder_vision_multischema-20260925T050657Z",
+  "timestamp_utc": "2026-09-25T05:06:57Z",
+  "seed": 0,
+  "harness_git_commit": "b4fea87a6e42f8374f7ce2374dfae5e872724777",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/defend_the_center.cfg (stock, ships in the wheel)",
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "von",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "attack",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "Arena combat decision rule: 1. If an enemy is visible dead center in the crosshair, select attack. 2. If an enemy is visible on the left side of the screen, select turn left. 3. If an enemy is visible on the right side of the screen, select turn right. 4. If no enemies are visible in field of view, select turn left to sweep the arena.\nattack: An enemy is visible dead center on the crosshair. Fire weapon immediately.\nturn left: Target is on the left side, or no active enemies are visible in view; rotate view left to search.\nturn right: Target is visible on the right side of the view; rotate view right to center target."
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_vision_multischema",
+    "checkpoint_name": "ekvachan-decoder-qwen-stage3",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "architecture": "decoder-lora-restricted-logit-general",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "max_options": 588,
+    "max_pixels": 200704,
+    "n_lora_modules": 128,
+    "vision_tower_frozen": true,
+    "temperature_applied": false,
+    "temperature": null,
+    "calibration_note": "raw (uncalibrated) probabilities by default -- PRD.md 13a.2/13a.5 found temperature scaling makes this architecture's ECE/Brier worse, not better (finding is about the mechanism, predates vision); pass apply_temperature=True / --decoder-apply-temperature to override",
+    "device": "cuda"
+  },
+  "results": {
+    "scenario": "defend_the_center",
+    "rubric": "von",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "n_decisions": 1449,
+    "n_out_of_schema": 0,
+    "kills_by_episode": [
+      {
+        "seed": 42106076,
+        "episode_index": 0,
+        "steps": 196,
+        "kills": 10.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 77.53060664981604,
+        "latency_ms_p95": 92.61737018823624
+      },
+      {
+        "seed": 42106077,
+        "episode_index": 0,
+        "steps": 263,
+        "kills": 14.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 82.96276535838842,
+        "latency_ms_p95": 99.49239818379283
+      },
+      {
+        "seed": 42106078,
+        "episode_index": 0,
+        "steps": 94,
+        "kills": 2.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 86.87024284154177,
+        "latency_ms_p95": 131.47749397903678
+      },
+      {
+        "seed": 42106079,
+        "episode_index": 0,
+        "steps": 222,
+        "kills": 11.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 84.72925005480647,
+        "latency_ms_p95": 105.67354671657085
+      },
+      {
+        "seed": 42106080,
+        "episode_index": 0,
+        "steps": 76,
+        "kills": 3.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 86.30177890881896,
+        "latency_ms_p95": 104.80060055851936
+      },
+      {
+        "seed": 42106081,
+        "episode_index": 0,
+        "steps": 238,
+        "kills": 13.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 84.0119100175798,
+        "latency_ms_p95": 103.38920382782817
+      },
+      {
+        "seed": 42106082,
+        "episode_index": 0,
+        "steps": 177,
+        "kills": 9.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 88.08102924376726,
+        "latency_ms_p95": 112.17893678694963
+      },
+      {
+        "seed": 42106083,
+        "episode_index": 0,
+        "steps": 183,
+        "kills": 9.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 88.26915547251701,
+        "latency_ms_p95": 117.78864962980154
+      }
+    ],
+    "kills_aggregate": {
+      "mean": 8.875,
+      "sd": 4.044672421840859,
+      "min": 2.0,
+      "max": 14.0,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 1449,
+      "accuracy": 0.6204278812974465,
+      "brier": 0.40615296602577383,
+      "ece": 0.2161983097521003,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-defend_the_center-von-decoder_vision_multischema-20260925T050657Z.raw",
+  "episodic": true
+}

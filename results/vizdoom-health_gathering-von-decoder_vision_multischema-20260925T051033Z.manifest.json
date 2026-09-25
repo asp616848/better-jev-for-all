@@ -1,0 +1,164 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-health_gathering-von-decoder_vision_multischema-20260925T051033Z",
+  "timestamp_utc": "2026-09-25T05:10:33Z",
+  "seed": 0,
+  "harness_git_commit": "b4fea87a6e42f8374f7ce2374dfae5e872724777",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/health_gathering.cfg (stock, ships in the wheel)",
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "von",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "move forward",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "Acid survival navigation rules: 1. If a medkit is located dead center or straight ahead, select move forward. 2. If a medkit is located on the left side of the screen, select turn left. 3. If a medkit is located on the right side of the screen, select turn right. 4. If facing a wall right in front or no medkits visible, select turn right to explore open space.\nmove forward: A medkit is straight ahead, or wide open space ahead with no obstacle in front; advance forward.\nturn left: A medkit is visible on the left side; rotate left toward it.\nturn right: A medkit is visible on the right side, or facing a wall obstacle ahead; rotate right toward open room."
+  },
+  "model": {
+    "instantiated": true,
+    "backend": "decoder_vision_multischema",
+    "checkpoint_name": "ekvachan-decoder-qwen-stage3",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "architecture": "decoder-lora-restricted-logit-general",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "max_options": 588,
+    "max_pixels": 200704,
+    "n_lora_modules": 128,
+    "vision_tower_frozen": true,
+    "temperature_applied": false,
+    "temperature": null,
+    "calibration_note": "raw (uncalibrated) probabilities by default -- PRD.md 13a.2/13a.5 found temperature scaling makes this architecture's ECE/Brier worse, not better (finding is about the mechanism, predates vision); pass apply_temperature=True / --decoder-apply-temperature to override",
+    "device": "cuda"
+  },
+  "results": {
+    "scenario": "health_gathering",
+    "rubric": "von",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "n_decisions": 1484,
+    "n_out_of_schema": 0,
+    "survival_s_by_episode": [
+      {
+        "seed": 41006394,
+        "episode_index": 0,
+        "steps": 168,
+        "survival_s": 19.2,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 89.38671182841063,
+        "latency_ms_p95": 172.5193725898862
+      },
+      {
+        "seed": 41006395,
+        "episode_index": 0,
+        "steps": 208,
+        "survival_s": 23.771428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 94.2393047735095,
+        "latency_ms_p95": 161.5122515708208
+      },
+      {
+        "seed": 41006396,
+        "episode_index": 0,
+        "steps": 120,
+        "survival_s": 13.714285714285714,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 89.98951688408852,
+        "latency_ms_p95": 130.44994231313464
+      },
+      {
+        "seed": 41006397,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 87.01312635093927,
+        "latency_ms_p95": 116.15732153877616
+      },
+      {
+        "seed": 41006398,
+        "episode_index": 0,
+        "steps": 144,
+        "survival_s": 16.457142857142856,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 88.82664237171412,
+        "latency_ms_p95": 150.91949272900814
+      },
+      {
+        "seed": 41006399,
+        "episode_index": 0,
+        "steps": 224,
+        "survival_s": 25.6,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 89.06667353585362,
+        "latency_ms_p95": 113.67026413790882
+      },
+      {
+        "seed": 41006400,
+        "episode_index": 0,
+        "steps": 136,
+        "survival_s": 15.542857142857143,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 87.51082792878151,
+        "latency_ms_p95": 151.8435834441334
+      },
+      {
+        "seed": 41006401,
+        "episode_index": 0,
+        "steps": 184,
+        "survival_s": 21.02857142857143,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 85.88608680292964,
+        "latency_ms_p95": 107.25651290267706
+      }
+    ],
+    "survival_s_aggregate": {
+      "mean": 21.200000000000003,
+      "sd": 6.242710034226207,
+      "min": 13.714285714285714,
+      "max": 34.285714285714285,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 1484,
+      "accuracy": 0.6893530997304582,
+      "brier": 0.37906573150529876,
+      "ece": 0.13708709923404885,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-health_gathering-von-decoder_vision_multischema-20260925T051033Z.raw",
+  "episodic": true
+}

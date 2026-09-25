@@ -1426,6 +1426,23 @@ Both corrected numbers are *higher* than the original (wrong) ones, not lower --
 
 Evidence: `results/run_94c9b540d3d04533ab5a/manifest.json` (wide, corrected), `results/run_f1fa49629e9e4928ad58/manifest.json` (stage3, corrected), both in the bench-repo. The original (wrong) bundles (`run_e5f764f188a64c9daa16`, `run_3a16797302724dd082bd`) are left in place rather than deleted, per this project's evidence-discipline norm of not erasing a mistake, just correcting the record pointing at it.
 
+### 13a.21 ViZDoom re-run against the current checkpoint (stage3) -- essentially matches Von's headline number (2026-09-25)
+
+13a.15's ViZDoom result (8.25 kills, 32.86s) was against `checkpoints/ekvachan-decoder-qwen-vision`, the pre-PRD-5.1b checkpoint -- never re-tested against `wide` or `stage3` until now. Re-run: `python -m benchmarks.vizdoom.run --backend decoder-vision-multischema --checkpoint-dir checkpoints/ekvachan-decoder-qwen-stage3 --scenario both --rubric both`, same Von-published 8 seeds per scenario, both rubric conditions.
+
+| Scenario | Rubric | ekVachan stage3 (this run) | ekVachan vision (13a.15) | Von (published) | Jev (published) |
+|---|---|---|---|---|---|
+| Defend the Center (kills) | von | **8.875** (sd 4.04) | 8.25 | 9.00 | 5.62 |
+| Defend the Center (kills) | none | 1.875 | 1.88 | -- | -- |
+| Health Gathering (survival s) | von | 21.20 (sd 6.24) | 32.86 | 12.11 | 13.03 |
+| Health Gathering (survival s) | none | 20.74 (sd 10.61) | -- | -- | -- |
+
+**Defend the Center**: stage3 essentially matches Von's published number now -- 8.875 vs 9.00, a 1.4% gap, closer than 13a.15's already-competitive 8.25. Decisively ahead of Jev (+58%). Same honest caveat as 13a.15 still applies and is reconfirmed here: without Von's rubric embedded in the prompt, kills collapse to 1.875 (vs 13a.15's 1.88, essentially identical) -- most of the game-competent behavior comes from following an injected rule, not raw visual/game understanding, and that hasn't changed with this retrain.
+
+**Health Gathering**: a real, honest decrease from 13a.15's 32.86s to 21.20s -- worth reporting plainly, not smoothing over. Still clears the random-baseline floor (14.09s, 13a.13) by +50%, and still beats both Jev (13.03s) and Von (12.11s) on the raw number, but 13a.13's own finding stands: this metric doesn't discriminate well between weak policies (random already beat both published baselines), so neither 21.20s nor 32.86s should be read as "smarter than Von at survival" -- both are "comfortably above a metric that doesn't discriminate," and the gap between them is not a validated regression in game-relevant capability, just a real, unexplained difference in an already-noisy metric (sd 6.24-10.61 across only 8 episodes).
+
+Evidence: `results/vizdoom-{defend_the_center,health_gathering}-{von,none}-decoder_vision_multischema-20260925T05*.manifest.json`.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
