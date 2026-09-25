@@ -1,0 +1,9 @@
+torch
+transformers>=4.45
+peft>=0.13
+pillow
+torchvision
+numpy
+huggingface-hub>=0.25
+gradio
+spaces

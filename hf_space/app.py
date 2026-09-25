@@ -1,19 +1,38 @@
 """
-ekVachan Hugging Face Space demo.
+ekVachan Hugging Face Space demo -- Gradio SDK (no Docker), built to the
+explicit cost-minimization brief given for this deployment:
 
-Thin Gradio UI directly over `serve.inference.RoutingDecoderModel` -- the
-exact class our own `/v1/systemone` server runs in production (PRD.md
-13a.29-13a.34), not a reimplementation. Runs on ZeroGPU: the actual forward
-pass happens inside the `@spaces.GPU`-decorated function, on a shared GPU
-slice allocated per call.
-
-**Honest latency caveat, stated in the UI too, not just here**: ZeroGPU adds
-its own queueing/allocation/cold-start overhead on top of the model's own
-forward-pass time. The number this demo reports is real (measured around
-the actual `predict_choice` call), but it is NOT the ~112ms p50 / ~131ms p95
-figure in the README/PRD -- that number comes from our own dedicated
-server with a warm, persistently-loaded model (PRD.md 13a.33/13a.34). This
-demo exists to let people try the model, not to reproduce the benchmark.
+  1. No Docker -- plain `gradio` SDK Space (see README.md's front matter),
+     requirements.txt for deps. Source files this app imports (serve/,
+     benchmarks/common/, training/decoder_lora_lib.py, eval/) are vendored
+     into this Space repo directly by scripts/publish_to_huggingface.py --
+     no `git clone` anywhere in this file or at request time.
+  2. @spaces.GPU wraps ONLY the actual model call (`_run_inference` below),
+     never the Gradio callback that does input parsing/validation/base64
+     encoding -- that all happens in `predict()`, outside the decorator.
+  3. The model is loaded ONCE at import time (module scope, i.e. at Space
+     cold start, never per-request) -- but constructed with device="cpu"
+     deliberately: moving a model onto an actual GPU device has to happen
+     inside a real GPU context, and the only place this Space is
+     guaranteed to have one is inside `@spaces.GPU`. So `_run_inference`
+     moves it to "cuda" exactly ONCE, on the first real call, guarded by a
+     module-level flag -- never re-loaded, never re-moved, on every
+     subsequent request. This is safe and correct whether the Space ends
+     up running on true ZeroGPU (ephemeral GPU attachment per call, where
+     `spaces.GPU` is not a no-op) or on dedicated hardware like a T4 (where
+     `spaces.GPU` is a documented no-op passthrough and the GPU is simply
+     always there) -- see the handoff notes for why this repo's hardware
+     tier is still an open question at the time this file was written.
+  4. No torch.compile, no CUDA graphs (EKVACHAN_USE_CUDA_GRAPHS=0, forced
+     below) -- both deliberately off for this Space specifically: CUDA
+     graphs were only ever validated (PRD.md 13a.29-13a.34) on this
+     project's own training-server GPU, never on a T4 (Turing, limited/no
+     native bf16 tensor-core support) or under ZeroGPU's ephemeral
+     GPU-attachment model, where a captured graph's validity across calls
+     is an open, unverified question this session has no way to test.
+     Simplicity over an unverified ~15% win, for a cost-minimized demo.
+  5. No background process, no polling loop, no persistent worker thread --
+     this file defines a Gradio app and nothing else runs on its own.
 """
 
 import base64
@@ -28,34 +47,50 @@ from huggingface_hub import snapshot_download
 MODEL_REPO = os.environ.get("EKVACHAN_HF_MODEL_REPO", "abhi6168/ekvachan-decoder")
 CHECKPOINTS_DIR = "checkpoints"
 
-# Pulled once at Space startup (cold start), not per-request. The repo must
-# lay out its files as <MODEL_REPO>/ekvachan-decoder-qwen-benchcorpus/{...}
-# and .../ekvachan-decoder-qwen-vision/{...}, each with its own
-# manifest.json + adapter weights -- the same shape
-# RoutingDecoderModel.__init__ already expects locally (see
-# serve/inference.py's TEXT_CHECKPOINT_NAME/VISION_CHECKPOINT_NAME).
+# Model *weights* (LoRA adapters, a few hundred MB, not the base model) --
+# downloaded once at cold start, outside any @spaces.GPU function. This is
+# a "model download" (requirement 5 names this explicitly) and belongs
+# exactly here: module scope, not inside the decorated inference function.
 snapshot_download(repo_id=MODEL_REPO, local_dir=CHECKPOINTS_DIR)
 
-# Same production defaults as serve/server.py: the "vision" slot holds the
-# strongest (stage3) checkpoint and answers text-only requests too
-# (PRD.md 13a.20/13a.33), CUDA graphs on (PRD.md 13a.34).
+# Same production adapter-routing default as serve/server.py (PRD.md
+# 13a.20/13a.33): the "vision" slot holds the strongest (stage3) checkpoint
+# and answers text-only requests too. CUDA graphs forced off -- see the
+# module docstring's point 4.
 os.environ.setdefault("EKVACHAN_TEXT_ADAPTER", "vision")
-os.environ.setdefault("EKVACHAN_USE_CUDA_GRAPHS", "1")
+os.environ["EKVACHAN_USE_CUDA_GRAPHS"] = "0"
 
 from serve.inference import RoutingDecoderModel  # noqa: E402 -- after env vars are set
 
-_model = None
-
-
-def get_model():
-    global _model
-    if _model is None:
-        _model = RoutingDecoderModel(checkpoints_dir=CHECKPOINTS_DIR)
-    return _model
+# Loaded once, on CPU, at import time -- the expensive part (reading
+# safetensors off disk, constructing both LoRA adapters, building the code
+# table) happens here, exactly once, never inside a request or inside
+# @spaces.GPU. device="cpu" is deliberate: see module docstring point 3.
+_model = RoutingDecoderModel(checkpoints_dir=CHECKPOINTS_DIR, device="cpu")
+_model_on_gpu = False
 
 
 @spaces.GPU(duration=30)
+def _run_inference(state: str, options: list[str], image_b64: str | None) -> dict:
+    """The ONLY function in this file that touches the GPU. Moves the
+    already-loaded model onto cuda exactly once (first call only, guarded
+    by `_model_on_gpu`), then runs one real forward pass. Nothing else --
+    no parsing, no formatting, no base64 work -- happens in here, to keep
+    GPU-attached time (what actually gets billed/quota-metered) as close
+    to "just the forward pass" as possible (requirements 14/15)."""
+    global _model_on_gpu
+    if not _model_on_gpu:
+        _model.model.to("cuda")
+        _model.device = "cuda"
+        _model_on_gpu = True
+    return _model.predict_choice(state, options, image_b64=image_b64)
+
+
 def predict(state: str, options_text: str, image):
+    """Gradio callback -- all CPU-only work (validation, parsing, base64
+    encoding, error formatting) lives here, outside @spaces.GPU, per
+    requirement 14. Only the single call to `_run_inference` below ever
+    touches the GPU."""
     if not state or not state.strip():
         raise gr.Error("Enter a state / question.")
     options = [o.strip() for o in options_text.split(",") if o.strip()]
@@ -68,10 +103,9 @@ def predict(state: str, options_text: str, image):
         image.save(buf, format="PNG")
         image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
-    model = get_model()
     t0 = time.time()
     try:
-        result = model.predict_choice(state, options, image_b64=image_b64)
+        result = _run_inference(state, options, image_b64)
     except Exception as e:
         raise gr.Error(str(e))
     elapsed_ms = (time.time() - t0) * 1000
@@ -79,8 +113,8 @@ def predict(state: str, options_text: str, image):
     return (
         result["choice"],
         {opt: float(p) for opt, p in result["probabilities"].items()},
-        f"{elapsed_ms:.0f}ms this call (ZeroGPU queue+cold-start included -- "
-        f"not our benchmarked ~112ms p50, see PRD.md 13a.33/13a.34)",
+        f"{elapsed_ms:.0f}ms this call (includes any queueing/allocation overhead -- "
+        f"not our benchmarked ~112ms p50 on dedicated hardware, see PRD.md 13a.33/13a.34)",
     )
 
 
@@ -94,7 +128,7 @@ with gr.Blocks(title="ekVachan") as demo:
         "[GitHub](https://github.com/asp616848/better-jev-for-all) -- real, "
         "verified accuracy/latency numbers (JevBench, jabr-v2, ViZDoom, our "
         "own corpus) live in the README and PRD.md there, measured against "
-        "our own dedicated server, not this Space."
+        "our own dedicated server, not necessarily this Space's hardware."
     )
     with gr.Row():
         with gr.Column():
