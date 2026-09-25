@@ -48,8 +48,9 @@ RESULTS_DIR = REPO_ROOT / "results"
 MULTISCHEMA_BACKENDS = {
     "decoder-multischema", "decoder-multischema-mock",
     "decoder-vision-multischema", "decoder-vision-multischema-mock",
+    "routing-decoder",
 }
-VISION_BACKENDS = {"decoder-vision-multischema", "decoder-vision-multischema-mock"}
+VISION_BACKENDS = {"decoder-vision-multischema", "decoder-vision-multischema-mock", "routing-decoder"}
 
 
 def build_backend(args: argparse.Namespace):
@@ -96,6 +97,13 @@ def build_backend(args: argparse.Namespace):
         return backends.DecoderVisionMultischemaMockBackend(
             max_options=args.max_options or DECODER_MULTISCHEMA_MAX_OPTIONS
         )
+    if args.backend == "routing-decoder":
+        return backends.RoutingModelBenchmarkBackend(
+            checkpoints_dir=Path(args.checkpoints_dir) if args.checkpoints_dir else None,
+            text_adapter=args.text_adapter,
+            use_cuda_graphs=args.use_cuda_graphs,
+            max_options=args.max_options,
+        )
     raise ValueError(f"unknown backend {args.backend!r}")
 
 
@@ -107,6 +115,7 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
             "in_process", "http", "mock", "random",
             "decoder-multischema", "decoder-multischema-mock",
             "decoder-vision-multischema", "decoder-vision-multischema-mock",
+            "routing-decoder",
         ],
         default="in_process",
         help="in_process imports serve.inference.EncoderChoiceModel directly (needs torch/"
@@ -123,7 +132,12 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
              "train_decoder_lora_general.py (needs torch/transformers/peft/pillow/torchvision and "
              "--checkpoint-dir pointing at one -- see PRD.md 5.2b/13a.11); it can answer both "
              "text-only and image-bearing choice items. decoder-vision-multischema-mock is that "
-             "path's non-trained wiring self-test (it never looks at the image).",
+             "path's non-trained wiring self-test (it never looks at the image). "
+             "routing-decoder loads serve.inference.RoutingDecoderModel directly -- the actual "
+             "class /v1/systemone serves through, including its text-adapter routing and (with "
+             "--use-cuda-graphs) PRD.md 13a.29/13a.30's CUDA-graph fast path -- needs "
+             "--checkpoints-dir (a directory containing both the benchcorpus and vision "
+             "checkpoint subdirs, not a single checkpoint dir).",
     )
     p.add_argument("--http-endpoint", default="http://127.0.0.1:8000")
     p.add_argument("--checkpoint-dir", default=None,
@@ -156,6 +170,26 @@ def make_arg_parser(prog: str) -> argparse.ArgumentParser:
                          "default -- PRD.md 13a.2/13a.5 found this architecture's temperature-"
                          "scaling procedure makes ECE/Brier worse, not better; 'use raw for now' is "
                          "that section's own conclusion.")
+    p.add_argument("--checkpoints-dir", default=None,
+                    help="routing-decoder only: directory containing BOTH "
+                         "ekvachan-decoder-qwen-benchcorpus/ and ekvachan-decoder-qwen-vision/ "
+                         "(the layout serve.inference.RoutingDecoderModel expects -- typically "
+                         "checkpoints/ with the wide/stage3 checkpoint symlinked into the "
+                         "ekvachan-decoder-qwen-vision slot, same pattern PRD.md 13a.18/13a.20's "
+                         "throwaway eval harnesses already used). Default: RoutingDecoderModel's "
+                         "own default (<repo_root>/checkpoints).")
+    p.add_argument("--text-adapter", default=None,
+                    help="routing-decoder only: override EKVACHAN_TEXT_ADAPTER for this run (e.g. "
+                         "'benchcorpus' to force the narrow known-stable checkpoint instead of "
+                         "whichever the env var / TEXT_ADAPTER_PENDING_SENTINEL default resolves "
+                         "to). Leave unset to test the SAME routing production actually uses.")
+    p.add_argument("--use-cuda-graphs", action="store_true",
+                    help="routing-decoder only (PRD.md 13a.29/13a.30): enable "
+                         "RoutingDecoderModel's CUDA-graph fast path for this run (same as setting "
+                         "EKVACHAN_USE_CUDA_GRAPHS=1). Off by default -- run once with this unset "
+                         "and once with it set, same checkpoints/items, to get a real eager-vs-"
+                         "graph comparison on this benchmark rather than just the synthetic prompts "
+                         "13a.29/13a.31 measured.")
     p.add_argument(
         "--selftest", action="store_true",
         help="run against benchmarks/<name>/fixtures/selftest.* (synthetic, authored in this repo) "
