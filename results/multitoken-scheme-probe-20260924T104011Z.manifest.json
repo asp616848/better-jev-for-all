@@ -708,7 +708,7 @@
       "note": "LoRA r=16 + gradient checkpointing, the config every run in this lineage uses. This is what calibrates the GPU-hour estimate for the wide slice against a measured rate rather than a parameter count (PRD \u00a79's own caution)."
     },
     "environment": {
-      "device_name": "NVIDIA L40S",
+      "device_name": "[redacted per project policy - see PRD 14 Q1]",
       "load_seconds": 6.2,
       "weights_vram_gb": 9.77,
       "peak_vram_gb": 15.05,

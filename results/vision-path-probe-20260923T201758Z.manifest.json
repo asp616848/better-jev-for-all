@@ -264,7 +264,7 @@
     "note": "Left padding keeps the final template token in the last column for every row, image or not, so `labels[:, last_col]` masking and the `logits[:, -1, :]` restricted-logit read in train_decoder_lora_benchcorpus.py work unchanged."
   },
   "gpu_forward": {
-    "device_name": "NVIDIA L40S",
+    "device_name": "[redacted per project policy - see PRD 14 Q1]",
     "load_seconds": 6.8,
     "weights_vram_gb": 9.51,
     "peak_vram_gb": 9.6,
