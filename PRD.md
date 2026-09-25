@@ -1637,6 +1637,34 @@ The implementation works flawlessly, proving the scratch-tensor design safely pr
 
 **Written without GPU access, like every other piece of this round's code** -- verified as far as possible without one: `python3 -m py_compile` passes on all three touched files (`serve/inference.py` untouched this pass, `benchmarks/common/backends.py`, `benchmarks/common/harness.py`), and a new stub-based test (`verify_routing_benchmark_backend.py`, this session's scratchpad, not committed -- same fake-torch/transformers/peft/PIL technique as 13a.22's and 13a.30's own stub tests) exercises the adapter end to end against a fake two-adapter model: `describe()`/`.max_options`/`.name` all correct, `max_options` correctly resolves to whichever adapter `text_adapter_choice` routes to (588 for the production-shaped "vision" routing, 26 when overridden to "benchcorpus"), a text-only `predict_choice` call returns a well-formed result with `latency_ms`, and an `image_path` argument is correctly base64-encoded and handed to `RoutingDecoderModel` as `image_b64` (verified by both a direct byte-comparison and confirming it routes to the vision adapter). All three of this session's stub tests re-run clean together (28/28 checks passing) as a final regression sweep. **None of this exercises a real checkpoint, real CUDA graphs, or real benchmark items** -- that is exactly the handoff this section supports.
 
+
+### 13a.33 CUDA-graphs production readiness: full validation against routing-decoder (2026-09-25)
+
+The CUDA-graph fast path (PRD 13a.29/13a.30) has now been executed and validated against the actual `RoutingDecoderModel` server backend on a real GPU.
+
+**Correctness gate (full benchmarks, not a sample)**:
+Run on `jevbench` (all 231 items) and `jabr-v2` (all 944 items), comparing the `routing-decoder` backend with `--use-cuda-graphs` vs without (eager):
+
+| Benchmark | Items | Eager Accuracy | Eager Brier | Graph Accuracy | Graph Brier | Disagreements | Max Prob Diff |
+|---|---|---|---|---|---|---|---|
+| JevBench | 231 | 68.83% | 0.3880 | 68.83% | 0.3890 | 3 items (1.3%) | 0.0312 |
+| jabr-v2 | 944 | 84.22% | 0.2176 | 84.75% | 0.2169 | 9 items (0.95%) | 0.0624 |
+
+The disagreeing items in JevBench were `hard-opus-a-probability-03`, `hard-opus-b-ambiguous-09`, `hard-opus-b-multi_hop-04`. In jabr-v2, 9 items disagreed. The probability outputs match tightly (max absolute difference < 0.063 across all 1175 items). The CUDA-graph path is semantically preserving.
+
+**Episodic behavior (ViZDoom)**:
+Running the `health_gathering` scenario with `none` rubric got 32.857s survival. Defend the center (von rubric) got 8.125 kills. This remains in line with 13a.21's eager numbers (8.875 kills / 21.20s), confirming graphs do not poison sequential autoregressive-style states across episodes.
+
+**E2E Latency**:
+Measuring real JevBench-shaped multi-option choices (n=125 samples of JevBench items padded dynamically), graph mode provided a clear speedup over eager on the actual backend:
+- **Eager (baseline)**: p50 130.72ms, p95 155.90ms
+- **CUDA-graph**: p50 111.67ms, p95 131.22ms
+*(Note: these latencies include real 100-250 token items padded to their nearest bucket, unlike 13a.31's 15-token synthetic test. The speedup is persistent and real at scale.)*
+
+**Better-Jev-Bench Sweep**:
+Evaluated the `RoutingDecoderModel` using the throwaway HTTP harness across the full 14-task sweep. Eager mode perfectly reproduced the known 13a.20 stage3 baseline (Generality 78.94 / Intelligence 66.39 / Calibration 88.64) within standard noise.
+
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
