@@ -45,7 +45,7 @@ PRD.md                  — full design doc (read this first — everything belo
 STATUS.md               — living task list: what's done, what's broken, what's next
 training/               — data pipeline + both training arms (encoder, decoder-LoRA, multischema/wideschema variants)
 eval/                   — shared accuracy/Brier/ECE metrics used by every training arm
-serve/                  — Python reference inference + the /v1/systemone FastAPI server (encoder-only today)
+serve/                  — Python reference inference + the /v1/systemone FastAPI server (decoder + CUDA graphs, on by default)
 benchmarks/             — real vendored third-party harnesses (jevbench/, jabr_v2/) + shared backends and schema filter
 results/                — committed evidence bundles (manifest per run), per PRD Section 8.2
 sdk/                    — Python and TypeScript clients for /v1/systemone
