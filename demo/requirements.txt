@@ -1,0 +1,7 @@
+# Only needed for demo/ -- not part of the main project's pyproject.toml on
+# purpose (see demo/README.md: this branch is not meant to merge to main).
+playwright
+imageio-ffmpeg
+requests
+# after `pip install -r demo/requirements.txt`, also run once:
+#   playwright install chromium

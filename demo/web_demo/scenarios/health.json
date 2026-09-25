@@ -1,0 +1,18 @@
+{
+  "domain_label": "Patient intake triage routing",
+  "disclaimer": "Demo of triage-QUEUE routing (which desk a case goes to), not a medical diagnosis. Not for real clinical use.",
+  "questions": [
+    {
+      "state": "Patient reports sudden crushing chest pain radiating to the left arm, started 15 minutes ago, accompanied by shortness of breath and sweating.",
+      "options": ["Emergency", "Urgent Care", "Routine Appointment"]
+    },
+    {
+      "state": "Patient calls in about a mild dry cough for two days, no fever, otherwise feeling normal, wants to know if they should be seen.",
+      "options": ["Emergency", "Urgent Care", "Routine Appointment"]
+    },
+    {
+      "state": "Patient twisted their ankle playing basketball an hour ago; it is swollen and painful to bear weight on, but they can wiggle their toes and there is no visible deformity.",
+      "options": ["Emergency", "Urgent Care", "Routine Appointment"]
+    }
+  ]
+}

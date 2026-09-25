@@ -1,0 +1,18 @@
+{
+  "domain_label": "Transaction risk triage (operational, not investment advice)",
+  "disclaimer": "Demo of operational risk-ops queue routing for a described transaction. Not trading, investment, or credit-decision advice.",
+  "questions": [
+    {
+      "state": "A card issued in Ohio was used for a $42 grocery purchase in the same city at 6:15pm, consistent with the cardholder's usual weekly pattern.",
+      "options": ["Approve", "Hold for Review", "Decline"]
+    },
+    {
+      "state": "A card with no prior international activity was just used for three consecutive $980 electronics purchases within 10 minutes, from a country the cardholder has never transacted in.",
+      "options": ["Approve", "Hold for Review", "Decline"]
+    },
+    {
+      "state": "A small business account received a $6,000 wire from a new counterparty, and the stated invoice number does not match any invoice on file for that counterparty.",
+      "options": ["Approve", "Hold for Review", "Decline"]
+    }
+  ]
+}

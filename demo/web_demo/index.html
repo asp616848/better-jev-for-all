@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ekVachan</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #131826;
+    --border: #232a3d;
+    --text: #e8ebf3;
+    --muted: #8993a8;
+    --accent: #5b8cff;
+    --good: #3ddc97;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .card {
+    width: 820px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 44px;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .brand .name { font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
+  .brand .tag { color: var(--muted); font-size: 14px; }
+  .domain-label {
+    display: inline-block;
+    margin-top: 6px;
+    margin-bottom: 22px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(91, 140, 255, 0.12);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .state-box {
+    background: #0e1320;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-size: 17px;
+    line-height: 1.5;
+    min-height: 56px;
+    margin-bottom: 22px;
+  }
+  .state-box .cursor {
+    display: inline-block;
+    width: 8px; height: 1.1em;
+    background: var(--accent);
+    vertical-align: -2px;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; min-height: 22px; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+  }
+  .dot.thinking { opacity: 1; animation: pulse 0.9s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(0.7); opacity: 0.4; } 50% { transform: scale(1.2); opacity: 1; } }
+  .status-text { color: var(--muted); font-size: 14px; }
+
+  .bars { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+  .bar-row { display: grid; grid-template-columns: 160px 1fr 64px; align-items: center; gap: 14px; }
+  .bar-label { font-size: 14px; color: var(--text); text-align: right; }
+  .bar-track {
+    height: 26px;
+    background: #0e1320;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #2f4fa0, var(--accent));
+    transition: width 0.6s cubic-bezier(.2,.9,.3,1);
+  }
+  .bar-fill.winner { background: linear-gradient(90deg, #1e8f66, var(--good)); }
+  .bar-pct { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .choice-out {
+    font-size: 15px;
+  }
+  .choice-out .label { color: var(--muted); }
+  .choice-out .value { color: var(--good); font-weight: 700; }
+  .latency-badge {
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .latency-badge b { color: var(--text); }
+  .disclaimer {
+    margin-top: 14px;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <span class="name">ekVachan</span>
+      <span class="tag">open System-One decision model</span>
+    </div>
+    <div class="domain-label" id="domainLabel">domain</div>
+
+    <div class="state-box" id="stateBox"><span class="cursor"></span></div>
+
+    <div class="status-row">
+      <div class="dot" id="statusDot"></div>
+      <div class="status-text" id="statusText"></div>
+    </div>
+
+    <div class="bars" id="bars"></div>
+
+    <div class="footer-row">
+      <div class="choice-out" id="choiceOut"></div>
+      <div class="latency-badge" id="latencyBadge"></div>
+    </div>
+
+    <div class="disclaimer" id="disclaimer"></div>
+  </div>
+
+<script>
+// Pure presentation layer. All real data (state text, options,
+// probabilities, choice, latency) is pushed in from outside by the Python
+// recording script via page.evaluate() -- this file never calls a network
+// API itself, specifically to sidestep any cross-origin question about a
+// static demo page calling a locally-running server (see demo/README.md).
+// Nothing in here fabricates a number: every value rendered came from a
+// real /v1/systemone response captured by the recorder.
+
+function demoSetDomain(label, disclaimer) {
+  document.getElementById('domainLabel').textContent = label;
+  document.getElementById('disclaimer').textContent = disclaimer || '';
+}
+
+function demoReset() {
+  document.getElementById('stateBox').innerHTML = '<span class="cursor"></span>';
+  document.getElementById('statusDot').className = 'dot';
+  document.getElementById('statusText').textContent = '';
+  document.getElementById('bars').innerHTML = '';
+  document.getElementById('choiceOut').textContent = '';
+  document.getElementById('latencyBadge').textContent = '';
+}
+
+function demoTypeState(text) {
+  return new Promise((resolve) => {
+    const box = document.getElementById('stateBox');
+    box.innerHTML = '';
+    let i = 0;
+    const speedMs = 14;
+    function step() {
+      if (i <= text.length) {
+        box.innerHTML = text.slice(0, i) + '<span class="cursor"></span>';
+        i += 1;
+        setTimeout(step, speedMs);
+      } else {
+        resolve();
+      }
+    }
+    step();
+  });
+}
+
+function demoShowOptions(options) {
+  const bars = document.getElementById('bars');
+  bars.innerHTML = '';
+  for (const opt of options) {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML =
+      '<div class="bar-label">' + opt + '</div>' +
+      '<div class="bar-track"><div class="bar-fill" data-opt="' + opt + '"></div></div>' +
+      '<div class="bar-pct" data-opt-pct="' + opt + '">0%</div>';
+    bars.appendChild(row);
+  }
+}
+
+function demoShowThinking() {
+  document.getElementById('statusDot').className = 'dot thinking';
+  document.getElementById('statusText').textContent = 'ekVachan is deciding…';
+}
+
+// result: {choice, probabilities: {opt: p, ...}, latency_ms}
+function demoShowResult(result) {
+  document.getElementById('statusDot').className = 'dot';
+  document.getElementById('statusText').textContent = 'done';
+  for (const [opt, p] of Object.entries(result.probabilities)) {
+    const fill = document.querySelector('.bar-fill[data-opt="' + opt + '"]');
+    const pct = document.querySelector('[data-opt-pct="' + opt + '"]');
+    if (!fill) continue;
+    const pctVal = Math.round(p * 1000) / 10;
+    fill.style.width = pctVal + '%';
+    if (opt === result.choice) fill.classList.add('winner');
+    pct.textContent = pctVal + '%';
+  }
+  document.getElementById('choiceOut').innerHTML =
+    '<span class="label">Decision: </span><span class="value">' + result.choice + '</span>';
+  document.getElementById('latencyBadge').innerHTML =
+    '<b>' + Math.round(result.latency_ms) + 'ms</b> real inference latency';
+}
+</script>
+</body>
+</html>
