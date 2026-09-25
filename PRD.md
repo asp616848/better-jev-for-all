@@ -1521,6 +1521,24 @@ Accuracy parity HOLDS on both benchmarks -- but it is moot: int8 loses catastrop
 
 Evidence: `results/jevbench-decoder_multischema-20260925T074911Z.manifest.json` (fp16), `results/jevbench-decoder_multischema-20260925T075407Z.manifest.json` (int8), `results/jabr_v2-decoder_multischema-20260925T075119Z.manifest.json` (fp16), `results/jabr_v2-decoder_multischema-20260925T080040Z.manifest.json` (int8).
 
+### 13a.27 Kernels audit + torch.compile experiment: overhead confirmed, both levers exhausted, <50ms not reached (2026-09-25)
+
+**Step 0 -- what the forward pass actually uses (inspected on the real loaded objects, serving stack, text-only load):** base is `Qwen/Qwen3.5-4B`, 4.56B params bf16, 32 decoder layers = 24 `Qwen3_5GatedDeltaNet` + 8 full-attention. Full attention runs `config._attn_implementation = "sdpa"` with the flash and mem-efficient SDPA backends enabled on sm_89 -- already optimal, nothing to fix. The gated-delta-rule path runs flash-linear-attention 0.5.2's Triton kernel (`is_new_implementation=True`, impl `fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule` resolved through the internal-path mapping) -- training's fix DOES carry over to serving, nothing to fix. `causal_conv1d_fn` does fall back to the torch reference (the warning fires once per process, exactly as 13a.23 established) -- but the profiler below prices it at ~2-3ms per forward, so even a perfect kernel would not move the number; 13a.23's close-out stands. No code changed in this step.
+
+**Profiler apportion (torch.profiler CPU+CUDA, 2 real `predict_choice` calls, text-only):** `ChunkGatedDeltaRuleFunction` costs 44.2ms self-CPU vs 2.3ms CUDA over the 2 forwards -- 0.92ms of Python autograd-Function wrapper per layer-call for 47us of GPU work, ~22ms per forward, the single largest overhead. `cudaLaunchKernel` 28.3ms over 5,576 launches (~14ms / ~2,800 launches per forward). Real compute (`aten::mm` GEMMs) ~20ms CUDA per forward. SDPA does not appear among the top ops. So of ~70-80ms: ~20-25ms compute, ~35-40ms launch/wrapper overhead, ~10ms odds and ends. The handoff's hypothesis is confirmed with numbers.
+
+**Step 1 -- torch.compile (all runs `dynamic=True`, cuda-synced, n=25):**
+
+| Attempt | Result |
+|---|---|
+| `mode="reduce-overhead"` (the mode that could kill launch overhead via CUDA graphs) | **Cannot build on this box.** Its `triton.cudagraphs` path code-gens a C++ pybind requiring `g++ -std=c++20`; the box has only g++ 7.5, no newer compiler exists, no root to install one. `TORCHINDUCTOR_CPP_WRAPPER=0` and an in-process `cpp_wrapper=False` patch are both silently overridden in torch 2.14 (verified: generated code still carries `-D TORCH_INDUCTOR_CPP_WRAPPER`). Terminal environment wall, not a model problem. |
+| `mode="default"` run 1 (cold caches) | Builds (first call 76s; dynamo hit its 8-recompile budget on the per-layer cache lazy-init transient, so much of the model fell back to eager). Numerics bf16-noise (maxabs 0.125, meanabs 0.03, argmax agrees); new shapes fine (no recompile blowup); adapter switch followed (compiled-vs-uncompiled vision maxabs 0.28 vs 3.5 inter-adapter, argmax agrees). Steady-state p50 75.93 vs same-run eager 79.15 -- ~3ms. |
+| `mode="default"` run 2 (caches warmed eager first, dynamo limits raised to 64) | Builds fully (first call 121s), numerics same bf16-noise -- but steady-state p50 **92.79 vs same-run settled eager 83.71: ~9ms SLOWER.** Inductor's Triton codegen + graph breaks around the opaque fla custom op lose to eager cuBLAS/cuDNN on this shape. **Do not ship.** |
+
+**Verdict: <50ms NOT reached.** Best measured forward this round is the settled eager path at ~69-84ms p50 depending on box contention (baselines across runs: 68.77 / 73.78 / 79.15 / 83.71 -- the shared-box variance this project always states). Every known Python-stack lever is now measured and exhausted: set_adapter skip shipped (-9ms, 13a.25), dispatch decomposed (13a.25), int8 killed (13a.26), kernels already optimal (this section), torch.compile blocked-or-negative (this section). The remaining gap is architectural -- the Rust/ONNX server PRD Section 7 already names as the actual target -- not a tunable left in this reference stack. Nothing in the repo changed this round (all experiment scripts ran from `/tmp/ekvachan-task1/`: `step0_kernels.py`, `step0_profile.py`, `step1_compile.py`, `step1e_compile.py`, logs alongside), so 13a.25's live routing verification stands as the current state and there was no changed path whose numerics needed a bench re-run.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
