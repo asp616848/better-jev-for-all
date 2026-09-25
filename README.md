@@ -19,7 +19,18 @@ Evidence bundles are committed in `results/` (`jevbench-decoder_multischema-2026
 
 **What those numbers are not**, stated up front rather than in a footnote: they are **not complete benchmark scores** (`is_complete_benchmark_score` is `false` in both manifests). Each run only attempted the items this architecture can legitimately answer — `choice` questions with 2–26 options whose gold label is in the option list. The unattempted remainder (**92/231 JevBench, 557/944 jabr-v2**) is *entirely* `score`- and `noul`-type questions, which no ekVachan model is trained for yet — not wide-option `choice` items; the widest real option set in either dataset is 6. So this is **not** a like-for-like comparison against Von's or Jev's published figures, and no claim of beating either is made here. See PRD Sections 8.3 and 13a.7.
 
-**The server is one phase behind the model.** `serve/` (`POST /v1/systemone`) still loads the old fixed-3-way **encoder** checkpoint: it returns `501` for any option set other than `["entailment", "neutral", "contradiction"]`, and for `score`/`noul`. The decoder — the chosen architecture, and the one all the numbers above come from — **is not wired into the serving layer yet**. Separately, request shape follows Jev's documented contract but response shape is a best-effort reconstruction (there is no live Jev API to diff against), so this is "same request shape, best-effort response shape," not verified byte-for-byte compatibility. `STATUS.md` tracks this as the top open item.
+**How we compare to the field (2026-09-25, `stage3` checkpoint served via `routing-decoder` with CUDA-graphs).** ekVachan JevBench **70.99%**, jabr-v2 **85.49%**. Third-party numbers below are external, fetched from the respective projects' own READMEs, not run by us — version/methodology may not match exactly (noted inline):
+
+| Benchmark | ekVachan | Von | Jev |
+|---|---|---|---|
+| JevBench accuracy | 70.99% | 59.3%¹ | — |
+| jabr-v2 accuracy | 85.49% | 72.0% (macro, v1.1) | 96.6% (macro) |
+
+¹ Von 1.2's README reports per-difficulty-tier only (easy 100.0%/48, standard 63.9%/72, hard 38.7%/111 — no published overall figure); 59.3% is a case-count-weighted aggregate we derived from those tiers, not Von's own claim. No Jev JevBench number found in either source.
+
+Latency, current reference server (CUDA graphs **on by default** as of PRD 13a.34, serving actual JevBench-shaped items): **~112ms p50 / ~131ms p95** (vs ~131ms p50 / ~156ms p95 with graphs off). Published field numbers from the original task brief: Von <18ms, Rizzo Flow 49–52ms, Laya ~16ms — ekVachan remains behind on this axis; CUDA graphs are a real, accuracy-neutral ~15% win, not a fix for the remaining gap. See PRD 13a.29–13a.34 for the full investigation.
+
+**The server now runs the decoder.** `serve/` (`POST /v1/systemone`) serves `serve.inference.RoutingDecoderModel` by default (PRD 5.2b/14 Q4) — the decoder arm the numbers above come from, not the old fixed-3-way encoder. All three primitives (`choice` 2–588 options, `score`, `noul`) are answered for real, `Question.image` routes to the vision-capable adapter, and the CUDA-graph fast path (PRD 13a.29–13a.34) is **on by default** (`EKVACHAN_USE_CUDA_GRAPHS=0` forces eager, e.g. for a non-CUDA dev box). Request shape follows Jev's documented contract; response shape is a best-effort reconstruction (there is no live Jev API to diff against), so this is "same request shape, best-effort response shape," not verified byte-for-byte compatibility. `STATUS.md` tracks remaining open items.
 
 Model family name: **ekVachan**.
 
@@ -34,7 +45,7 @@ PRD.md                  — full design doc (read this first — everything belo
 STATUS.md               — living task list: what's done, what's broken, what's next
 training/               — data pipeline + both training arms (encoder, decoder-LoRA, multischema/wideschema variants)
 eval/                   — shared accuracy/Brier/ECE metrics used by every training arm
-serve/                  — Python reference inference + the /v1/systemone FastAPI server (encoder-only today)
+serve/                  — Python reference inference + the /v1/systemone FastAPI server (decoder + CUDA graphs, on by default)
 benchmarks/             — real vendored third-party harnesses (jevbench/, jabr_v2/) + shared backends and schema filter
 results/                — committed evidence bundles (manifest per run), per PRD Section 8.2
 sdk/                    — Python and TypeScript clients for /v1/systemone

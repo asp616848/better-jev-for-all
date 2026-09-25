@@ -238,11 +238,11 @@ uv run python3 -u -m training.probe_multitoken_scheme --gpu-forward
 | Do the cheaper single-position alphabets reach 151? | **No.** A–Z + a–z + 0–9 = **62 single tokens**, well short of 151. Letter+digit pairs (`A0`…`Z9`): **0 of 260** are single tokens. Multi-digit numerals: **9 of 199** — Qwen splits numerals per digit. | Case/digit mixing is a dead end; two-letter pairs are the only single-position alphabet that reaches real width. |
 | Is a genuine **two-position** (multi-token) read available? | **No, and this is a hard tokenizer blocker, stated plainly.** Exactly the 114 pairs that BPE *refuses* to merge encode to 2 tokens (all of them cleanly into the two single-letter ids). The other 562 merge into one token and the tokenizer will not split them. A uniform two-position scheme over `AA`..`ZZ` therefore **does not exist under this tokenizer**. | Path 1's *multi-token* form is unavailable. Its *single-token* form is not merely available but strictly better — see the decision below. |
 | Do full-width prompts even fit? | **Yes.** clinc150 at true 151-way: **839 tokens**; ledgar 100-way 569; banking77 77-way 587; go_emotions 28-way 173. All under the `--max-length 1280` the vision run already uses (13a.11). | No `max_length` change needed. The trailing answer line must name a **range** (`A .. FD`) rather than enumerate every code — enumerating costs **1,105 vs 839 tokens** at width 151, a 32% waste. |
-| What does width cost at inference? | Prefill, median of 5, real bf16 forward on the L40S: **n=3 → 74 tok / 65.7 ms; n=26 → 194 tok / 74.7 ms; n=60 → 372 / 86.9; n=77 → 454 / 102.0; n=100 → 570 / 117.5; n=151 → 839 / 145.5**. | **+95% latency for 5.8× the options**, and it is one forward pass at one position — the mechanism is untouched. Width is sub-linear in cost because the prompt, not the read, is what grows. |
+| What does width cost at inference? | Prefill, median of 5, real bf16 forward on the training server's GPU: **n=3 → 74 tok / 65.7 ms; n=26 → 194 tok / 74.7 ms; n=60 → 372 / 86.9; n=77 → 454 / 102.0; n=100 → 570 / 117.5; n=151 → 839 / 145.5**. | **+95% latency for 5.8× the options**, and it is one forward pass at one position — the mechanism is untouched. Width is sub-linear in cost because the prompt, not the read, is what grows. |
 | What would a real multi-token read have cost, had one been needed? | **KV-cached second step: 40.8 ms on top of a 152.4 ms prefill (+26.8%).** The one-pass two-position variant (append a placeholder, read positions −2 and −1) measured **146.2 ms, i.e. within run-to-run noise (±5%) of the prefill itself**. | Recorded because the task asked. Cheap in wall-clock — but the one-pass variant factorises `p(c1,c2|x)` as `p(c1|x)·p(c2|x)`, which cannot represent a two-way tie and would damage exactly the calibration this project sells. Moot: no multi-token read is needed. |
 | Is the wide code table's untrained prior pathological — do heterogeneous codes like `AM`/`IT`/`US` carry lexical priors the letters didn't? | **They do, and it is *less* bad than the table already in production.** Marginal over 8 varied real prompts, normalized entropy: **existing 26-letter table 0.362; lexicographic-first-151 wide table 0.479** (flatter). The argmax **moves with the prompt** on all 8 (`AM`, `CA`, `AX`, `EN`, `X`, `F`, `CH`, `EL`) — no single code dominates. | The wide table is **not a new problem**; it is the same mild skew the letter table has, which trained through to 96.10% (13a.6). No code-selection engineering is warranted. |
 | Would picking low-prior codes help? | **Only if you abandon A–Z compatibility, and then not worth it.** The 151 globally-lowest-prior codes reach normalized entropy 0.962 — but "A–Z + the 125 lowest-prior pairs" scores **0.235, worse than either**, because it pairs high-prior letters with deliberately-suppressed pairs. | **Reject the optimisation.** Lexicographic-first keeps ≤26-option prompts byte-identical to today's and measures flatter than the status quo. Measured, not assumed. |
-| What does width cost at *training* time? | LoRA r=16 + gradient checkpointing, real fwd+bwd on the L40S: **width 26 / seq 194 / batch 4 → 687.7 ms, 12.20 GB peak**; **width 151 / seq 839 / batch 4 → 3825.1 ms, 20.35 GB peak** (**5.56×**); **width 151 / batch 2 → 1650.8 ms, 15.05 GB peak**. | A wide row costs ~5.6× a narrow one. **Batch 2 is both faster per row (825 vs 956 ms) and 26% lighter on VRAM than batch 4 at width 151** — length-bucketed batching is a real, measured win, not a guess. The existing `min_free_vram_gb` guard (14) must rise to **24**. |
+| What does width cost at *training* time? | LoRA r=16 + gradient checkpointing, real fwd+bwd on the training server's GPU: **width 26 / seq 194 / batch 4 → 687.7 ms, 12.20 GB peak**; **width 151 / seq 839 / batch 4 → 3825.1 ms, 20.35 GB peak** (**5.56×**); **width 151 / batch 2 → 1650.8 ms, 15.05 GB peak**. | A wide row costs ~5.6× a narrow one. **Batch 2 is both faster per row (825 vs 956 ms) and 26% lighter on VRAM than batch 4 at width 151** — length-bucketed batching is a real, measured win, not a guess. The existing `min_free_vram_gb` guard (14) must rise to **24**. |
 | Path 2 (5.1a) — can Qwen3.5-4B host a late-interaction head, and what would it cost? | **Architecturally yes, economically no, today.** Per-token hidden states are exposed (33 layers, hidden size 2,560). Encoding 151 option strings as a batch: **864.2 ms**, plus 59.5 ms to encode the state — **923.7 ms uncached vs 145.5 ms for one wide prompt, a 6.3× loss.** Cached per fixed schema it collapses to the **59.5 ms state encode alone, a 2.4× win over 145.5 ms**. | Path 2's advantage is real but only in the *cached-fixed-schema* steady state, and it is bought with a new scoring head, a new training objective (contrastive, not next-token CE), and **zero reuse** of `decoder_lora_lib.py` / `backends.py`. Not justified while path 1 costs one constant. |
 
 **Decision: extend the existing restricted-logit mechanism to a generated 588-code single-token table. Do not build a multi-token read (it is not available under this tokenizer). Do not build 5.1a's cross-attention head for this purpose.**
@@ -336,9 +336,9 @@ uv run python3 -u -m training.probe_vision_path --gpu-forward
 | Does `AutoModelForCausalLM` — which every script in this lineage uses — load the vision tower? | **No.** For `model_type="qwen3_5"`, `AutoModelForCausalLM` maps to `Qwen3_5ForCausalLM`: **4.841B params, zero `visual` parameters**. `AutoModelForImageTextToText` maps to `Qwen3_5ForConditionalGeneration`: **5.175B params, 333.5M of them the vision tower (6.4%)**. | Every run in 13a.1–13a.10 silently discarded the vision tower. The vision run must swap the model class — and that swap has a consequence, next row. |
 | Does the existing LoRA config need new `target_modules`? | **No.** Applied to the VL class, `["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]` attaches to **exactly the same 128 modules (21,233,664 trainable params), none of them in the vision tower** — the ViT blocks use `attn.qkv` / `mlp.linear_fc{1,2}`, which match nothing in that list. | The vision encoder is frozen *by name mismatch*, which happens to be exactly the desired behaviour, but it is an accident we should make deliberate (assert it). No architecture change, no new adapter design. |
 | Do adapter weights transfer from the text runs? | **No, not without a key remap.** Under the CausalLM class the keys are `base_model.model.model.layers.N.…`; under the VL class they are `base_model.model.model.language_model.layers.N.…`. | Either retrain, or rewrite one path segment. See "step 0" below — we should do both, because the remap is a free and genuinely informative control. |
-| Does the restricted-logit read still work — the whole mechanism this project is built on? | **Yes, unchanged.** With `padding_side="left"`, a **mixed batch of one image row and one text-only row** produced `input_ids [2,280]`, a single ragged `pixel_values [784,1536]`, `image_grid_thw [1,3]`, and an **identical final token in the last column of both rows with `attention_mask=1`**. A real bf16 forward on the L40S returned `[1,280,248320]` logits and a sane restricted distribution over A/B/C. | `labels[:, last_col]` masking and `logits[:, -1, :]` restricted-logit reading need **no change at all**. This is the single most important result in this section. |
+| Does the restricted-logit read still work — the whole mechanism this project is built on? | **Yes, unchanged.** With `padding_side="left"`, a **mixed batch of one image row and one text-only row** produced `input_ids [2,280]`, a single ragged `pixel_values [784,1536]`, `image_grid_thw [1,3]`, and an **identical final token in the last column of both rows with `attention_mask=1`**. A real bf16 forward on the training server's GPU returned `[1,280,248320]` logits and a sane restricted distribution over A/B/C. | `labels[:, last_col]` masking and `logits[:, -1, :]` restricted-logit reading need **no change at all**. This is the single most important result in this section. |
 | Can text and image rows share one training run at all? | **Yes** — see above. A text-only row through the same processor emits no `pixel_values` and never touches the vision tower. | "One model for both" is not a research bet; it is already mechanically supported. |
-| VRAM? | Weights **9.51 GB** bf16; peak across image, text and mixed forwards **9.60 GB**, on the 46 GB L40S. | Not the constraint. Sequence length is — next block. |
+| VRAM? | Weights **9.51 GB** bf16; peak across image, text and mixed forwards **9.60 GB**, well within the training server's GPU budget. | Not the constraint. Sequence length is — next block. |
 
 **The real cost driver is image tokens, not VRAM.** The image processor ships effectively uncapped (`size.longest_edge = 16777216`). Measured tokens per image, same probe:
 
@@ -381,7 +381,7 @@ So 5.2's table row for `ekvachan-vision` is amended: it is not a separate tier w
 
 **Scale and GPU-time estimate** (derived from a measured rate, not from parameter count — §9's own caution)
 
-Anchor: 13a.10 trained 62,000 examples for one epoch in **4h40m** at `--max-length 384`, batch 4 × grad-accum 16 on the L40S. Proposed mix and cost:
+Anchor: 13a.10 trained 62,000 examples for one epoch in **4h40m** at `--max-length 384`, batch 4 × grad-accum 16 on the training server's GPU. Proposed mix and cost:
 
 | Slice | Rows | ~tokens/row | Relative cost | Est. GPU time |
 |---|---|---|---|---|
@@ -858,7 +858,7 @@ A claim like "ekVachan beats Jev at StarCraft" is only true once section 8.1's h
 
 ## 9. Compute plan
 
-**This is not a frontier-pretraining project.** Every disclosed competitor operates at 0.4B–9B parameters and reports training/fine-tuning times in the range of "under 2 hours on a single consumer GPU" (Kev: ~1h45m on Apple Silicon for its full family) to a few A100/H100-hours for larger runs. Concretely:
+**This is not a frontier-pretraining project.** Every disclosed competitor operates at 0.4B–9B parameters and reports training/fine-tuning times in the range of "under 2 hours on a single consumer GPU" (Kev: ~1h45m on Apple Silicon for its full family) to a few datacenter-GPU-hours for larger runs. Concretely:
 
 | Workload | Scale | Suggested compute | Rough time |
 |---|---|---|---|
@@ -871,9 +871,9 @@ A claim like "ekVachan beats Jev at StarCraft" is only true once section 8.1's h
 
 **Update 2026-09-22**: Phase 1 has now actually run on this server (13a) and the plan held at the encoder scale — but with one constraint this table didn't anticipate. It sizes workloads by parameter count and VRAM; the decoder arm was bottlenecked by **kernel availability** instead, falling back to un-fused reference implementations for Qwen3.5-4B's linear-attention/SSM-style layers and blowing up both time and memory (13a.2). Add that to the preflight checklist for any future run on a hybrid-architecture backbone: confirm the fused kernels are installed before trusting a time estimate derived from parameter count. The paragraph below is left as originally written, since the hardware spec it asks for still hasn't been recorded in this repo.
 
-**What we still need to know before Phase 1 sizing is final**: the server's GPU model and VRAM (run `nvidia-smi` and share the output), and how many GPUs. That determines batch size and whether `ekvachan-vision`/`ekvachan-large` are same-session-feasible or need to wait/queue behind `ekvachan-base`. Everything in the table above assumes a single modern datacenter or high-end consumer GPU (e.g. anything from a 3090/4090 up through an A100/H100 class card) — if the server's card is smaller (e.g. under 16GB VRAM), `ekvachan-base` is still very achievable, just with smaller batch sizes and gradient accumulation, and `ekvachan-vision`/`ekvachan-large` would need either more VRAM or an int8/QLoRA fine-tuning path instead of full fine-tuning.
+**What we still need to know before Phase 1 sizing is final**: the server's GPU model and VRAM (run `nvidia-smi` and share the output), and how many GPUs. That determines batch size and whether `ekvachan-vision`/`ekvachan-large` are same-session-feasible or need to wait/queue behind `ekvachan-base`. Everything in the table above assumes a single modern datacenter or high-end consumer GPU — if the server's card is smaller (e.g. under 16GB VRAM), `ekvachan-base` is still very achievable, just with smaller batch sizes and gradient accumulation, and `ekvachan-vision`/`ekvachan-large` would need either more VRAM or an int8/QLoRA fine-tuning path instead of full fine-tuning.
 
-**Recorded 2026-09-23** (`nvidia-smi`, shared lab server): single **NVIDIA L40S, 46068 MiB VRAM**, driver 580.126.09, compute capability 8.9. Comfortably in the "single modern datacenter GPU" bracket the table above assumes -- every real Phase 1 run so far (encoder 1.2M examples, decoder 24-60K examples) fit within this budget with room to spare, and the decoder's actual VRAM constraint has consistently been missing fused kernels (13a.2/13a.4), not raw capacity. Shared with other lab users -- observed utilization/load varies outside this project's own jobs.
+**Recorded 2026-09-23** (`nvidia-smi`, shared lab server): single datacenter-class GPU with ample VRAM headroom for every workload in this document (exact model/VRAM figure kept out of this public doc by policy; see internal ops notes if you need it). Comfortably in the "single modern datacenter GPU" bracket the table above assumes -- every real Phase 1 run so far (encoder 1.2M examples, decoder 24-60K examples) fit within this budget with room to spare, and the decoder's actual VRAM constraint has consistently been missing fused kernels (13a.2/13a.4), not raw capacity. Shared with other lab users -- observed utilization/load varies outside this project's own jobs.
 
 No cloud spend budget needed for this plan as it stands. If the server ever becomes a bottleneck (e.g. wanting to parallelize multiple experiments), a rented spot GPU (RunPod/Lambda/Vast.ai) remains a fallback option, not a requirement.
 
@@ -1442,6 +1442,259 @@ Evidence: `results/run_94c9b540d3d04533ab5a/manifest.json` (wide, corrected), `r
 **Health Gathering**: a real, honest decrease from 13a.15's 32.86s to 21.20s -- worth reporting plainly, not smoothing over. Still clears the random-baseline floor (14.09s, 13a.13) by +50%, and still beats both Jev (13.03s) and Von (12.11s) on the raw number, but 13a.13's own finding stands: this metric doesn't discriminate well between weak policies (random already beat both published baselines), so neither 21.20s nor 32.86s should be read as "smarter than Von at survival" -- both are "comfortably above a metric that doesn't discriminate," and the gap between them is not a validated regression in game-relevant capability, just a real, unexplained difference in an already-noisy metric (sd 6.24-10.61 across only 8 episodes).
 
 Evidence: `results/vizdoom-{defend_the_center,health_gathering}-{von,none}-decoder_vision_multischema-20260925T05*.manifest.json`.
+
+### 13a.22 RoutingDecoderModel's option-width validation fixed to check the routed adapter's own cap, not the global code table (fix for the gap 13a.20 found) (2026-09-25, session with NO GPU access -- see caveat below)
+
+13a.20 named a real bug in `serve/inference.py`'s `RoutingDecoderModel` beyond its own script-config mistake: `predict_choice`/`predict_score` validated an incoming request's option count against the global `DECODER_MULTISCHEMA_MAX_OPTIONS` (588, the shared code table's ceiling), not against whichever named LoRA adapter `_select_adapter()` actually routes the request to. A 77-option request routed to `"benchcorpus"` (manifest `max_options: 26`, predates PRD.md 5.1b) passed that check (`2 <= 77 <= 588`) and was silently served by a checkpoint never trained on that width -- no error, a plausible-looking wrong answer. Not fixed at 13a.20 (that section's own root cause was a script config value, `text_adapter="benchcorpus"` vs `"vision"`; this validation gap just let the mistake fail silently instead of loudly).
+
+**Fix, in `serve/inference.py`**: `RoutingDecoderModel.__init__` now reads each loaded adapter's own checkpoint manifest and stores `self._adapter_max_options: dict[adapter_name, int]` (text checkpoint and, if loaded, vision checkpoint each supply their own `max_options`, defaulting to `DECODER_MULTISCHEMA_MAX_OPTIONS` if a manifest predates that field -- same fallback `DecoderVisionMultischemaBackend` already uses). `predict_choice` now calls `_select_adapter()` *before* checking option count (that call has no side effects, so this is safe outside `self._lock`), then validates `n` against that specific adapter's own cap, raising `ChoiceUnsupportedError` naming the routed adapter, its real cap, and every loaded adapter's cap if the request doesn't fit -- matching this file's existing narrative error style (`AdapterNotConfiguredError`/`ChoiceUnsupportedError`). `predict_score` is covered for free (it calls `predict_choice` internally). `self.max_options` (588) is kept as-is -- it still sizes the shared code table and backs `serve/server.py`'s own coarse pre-filter, which stays a permissive upper bound, not the real per-request check (that's always been inside the model layer, not the HTTP layer, for the narrower `2 <= n <= max_options` case too). `describe()` now reports both the old flat `max_options` (documented as the code-table ceiling, not a per-adapter promise) and a new `max_options_by_adapter` dict with each loaded adapter's real cap.
+
+**Honest caveat -- this session had no GPU, no checkpoints/ directory, and no torch/transformers/peft/safetensors installed** (confirmed first: `python3 -c "import torch"` etc. all fail, `checkpoints/` doesn't exist, `nvidia-smi` isn't even a command here). The original task's live-verification steps ("spin up the real server... confirm a >26-option text request against a benchcorpus-only router fails loudly, and the same request against a vision/stage3-as-text-adapter router still works") are **not** things this session could do, and this section does not claim they were done. What this session verified instead, and is being explicit about the difference: a stub-based, in-process integration test (`serve.inference` imported for real, with minimal fake `torch`/`transformers`/`peft`/`safetensors` modules installed into `sys.modules` -- the same technique `sdk/python/tests/test_client.py`'s own module docstring already documents and uses to keep `serve.server` importable without those heavy deps -- and `_build_code_table_for_backend` swapped for a deterministic 700-entry stand-in, since PRD.md 13a.17 already validated that construction and it's not what changed here). Against real, on-disk `manifest.json` files (`{"max_options": 26}` for a fake "benchcorpus", `{"max_options": 588}` for a fake "vision"), running the actual unmodified `RoutingDecoderModel.__init__`/`predict_choice` control flow end to end:
+
+| Check | Result |
+|---|---|
+| `describe()["max_options_by_adapter"]` matches each adapter's manifest (`{"benchcorpus": 26}` benchcorpus-only; `{"benchcorpus": 26, "vision": 588}` both loaded) | **pass** |
+| 77-option text request, benchcorpus-only router | raises `ChoiceUnsupportedError` naming `'benchcorpus'` and cap `26` -- **loud, not silent** |
+| 10-option text request, benchcorpus-only router | succeeds, `result["adapter"] == "benchcorpus"` -- **no regression on the narrow path** |
+| 77-option text request, vision-as-text-adapter router | succeeds, `result["adapter"] == "vision"` -- **no regression on the currently-correct wide path** |
+| 600-option text request (over even the 588-wide vision adapter), vision-as-text-adapter router | raises `ChoiceUnsupportedError` naming `'vision'` and cap `588` -- **still fails loudly past every loaded adapter's real ceiling** |
+
+All 8 assertions in this test passed (`python3 -m py_compile serve/inference.py` also passes). This proves the new code path is reachable and behaves as intended under a controlled double, and is real evidence, not nothing -- but it is **not** a substitute for the real GPU run against the real `benchcorpus`/`vision`/`stage3` checkpoints the original task asked for, and this section says so rather than rounding a mocked pass up to "verified live." That run -- plus Task 2 (`causal_conv1d` install attempt + real before/after latency measurement, entirely GPU-bound) -- is handed off to a session with real SSH/GPU access; see the coordinating session's own handoff note for exactly what to run and report back.
+
+Evidence: this session's stub-based test script, `verify_routing_fix.py` (not committed to this repo -- a throwaway harness in this session's own scratchpad, same spirit as 13a.18's uncommitted `serve_eval_wide.py`), full pass/fail output reproduced in this section rather than summarized away.
+
+### 13a.23 Live GPU verification of the 13a.22 fix, causal-conv1d close-out, and serving-latency baseline (2026-09-25)
+
+Live on the training server's GPU against the real checkpoints, the 13a.22 fix holds on both arms -- a 77-option text request with `text_adapter="benchcorpus"` fails loudly (`ChoiceUnsupportedError` naming `'benchcorpus'` and its manifest cap of 26, surfaced as HTTP 501 rather than a silent 200, with the 10-option control returning 200) and the same request with the vision slot holding the `wide` checkpoint succeeds (HTTP 200, `adapter="vision"`), with the honest nuance that the real `vision` checkpoint's own manifest cap is also 26 so it too fails loudly on 77 options exactly as the per-adapter design intends; `causal-conv1d` is closed as uninstallable without root access (the `nvidia-cuda-nvcc-cu12` pip wheel ships no `nvcc` driver so the source build fails with `FileNotFoundError: '/usr/local/cuda/bin/nvcc'`, PyPI is source-only, and upstream's 80 prebuilt wheels top out at torch 2.10 with nothing for this box's torch 2.14.0+cu130/cp313), leaving the measured pre-kernel baseline of **p50 91.1ms / p95 108.7ms over HTTP (n=30, benchcorpus 10-option; wide-slot narrow p50 95.2ms / p95 134.3ms, n=10)** as the standing number; and `serve/inference.py`'s `RoutingDecoderModel` already serializes every forward pass through `self._lock` by documented design (the class docstring's "Concurrency note"), so single-request serving is intended behavior to revisit only if future latency work justifies it.
+
+### 13a.24 Request-lifecycle profile: where the ~90ms p50 goes (2026-09-25, measurement only, no code changed)
+
+Method: `predict_choice`'s text-only body replicated step-for-step in a scratch script (same helpers, same order, same lock; zero repo edits), `time.perf_counter()` checkpoints, `torch.cuda.synchronize()` after the H2D copy and around the forward pass; n=25 measured + 3 warmup excluded per case, 10-option prompt (123 input tokens both cases -- identical input, so bench-vs-wide differ only in adapter weights); replica fidelity checked by choice-agreement plus wall time (benchcorpus replica total 82.8ms vs real `predict_choice` wall 81.6ms; wide 102.9ms vs 100.8ms). HTTP E2E measured separately against the real uvicorn server (n=25 sequential + one 8-concurrent burst). Percentages are per-column shares of that column's replicated total (same contention regime, always self-consistent); stage 1 is derived (E2E minus in-server compute), not directly timed.
+
+| Stage | Benchcorpus p50 | Benchcorpus p95 | % of total | Wide-slot p50 | Wide-slot p95 | % of total |
+|---|---|---|---|---|---|---|
+| 3. `self._lock` wait (uncontended, sequential) | 0.00ms | 0.00ms | 0.0% | 0.00ms | 0.01ms | 0.0% |
+| 4. `set_adapter()` | 8.45ms | 11.91ms | 10.2% | 12.66ms | 26.99ms | 12.3% |
+| 2. Chat-template + processor + H2D (+sync) | 2.17ms | 4.46ms | 2.6% | 3.64ms | 8.46ms | 3.5% |
+| 5. Forward `model(**enc)` (sync both sides) | 69.18ms | 76.76ms | 83.5% | 79.65ms | 148.96ms | 77.4% |
+| 6a. Restricted-logit softmax/argmax | 0.50ms | 7.36ms | 0.6% | 0.73ms | 4.59ms | 0.7% |
+| 6b. Response `json.dumps` | 0.06ms | 0.15ms | 0.1% | 0.07ms | 0.13ms | 0.1% |
+| Replicated in-server total | 82.84ms | 94.07ms | 100% | 102.85ms | 181.06ms | 100% |
+| HTTP E2E (real server, sequential) | 102.44ms | 113.12ms | -- | 86.52ms | 96.59ms | -- |
+| 1. HTTP/FastAPI/dispatch (derived: E2E minus in-server) | ~19.6ms | ~19.1ms | ~19% of E2E | n/a (regimes differed, see below) | n/a | n/a |
+| Burst: 8 concurrent, wall / per-req p50 | 797.7ms / 510.6ms | per-req max 789.5ms | ~7.8x serial | 747.1ms / 446.6ms | per-req max 738.9ms | ~8.6x serial |
+
+GPU state at measurement (stated, not assumed): other users' jobs held a constant ~12GB throughout (8x ~1006MB + one ~3.9GB); our server added 9.7GB when up; 23.7GB free. Run-to-run variance is real on this shared box and is reported, not smoothed: an earlier wide-slot run measured forward 67.3/79.6ms and total 80.9/93.2ms (vs 79.7/149.0ms and 102.9/181.1ms above) under identical ~12GB occupancy, so absolute forward latency moves +-20% with SM timeshare even at constant memory pressure -- which is also why wide's stage 1 is not derived (its E2E ran in a quieter window than its in-process run).
+
+Decision read (no action taken this pass): step 5 dominates in every regime measured (77-84% of in-server time), so quantization remains a valid experiment on the biggest slice -- but `set_adapter()` (10-12%, pure PEFT/Python overhead across 128 LoRA modules) plus HTTP/dispatch (~19% benchcorpus) plus template (~3%) put ~30% of E2E outside anything quantization fixes, and the burst rows confirm fully-serial serving (wall ~= 8x sequential p50, per-request 5x blowup under x8 concurrency). Both levers are real; order is the open decision.
+
+Evidence: scratch scripts `/tmp/ekvachan-task1/profile_stages.py`, `profile_e2e.py` (not committed, same spirit as prior throwaway harnesses); raw per-run JSON printed to those runs' stdout.
+
+### 13a.25 Part A: set_adapter skip ships, HTTP dispatch isolated, async rewrite declined (2026-09-25)
+
+**A1 -- skip redundant `set_adapter()`.** Inspected first against the real loaded object (not assumed): `self.model.active_adapter` returns the active name as a plain string (`'benchcorpus'`), and a microbench proved PEFT never short-circuits -- redundant `set_adapter('benchcorpus')` costs 8.74/10.47ms p50/p95, a real switch from vision 8.41/14.77ms, i.e. identical. `predict_choice` now checks `active_adapter != adapter_name` under the existing lock and only calls `set_adapter()` on a real change (fail-safe toward the old path: anything but an exact string match still sets). Before/after, same 13a.24 methodology (n=25 in-process + HTTP E2E, cuda-synced):
+
+| Case | set_adapter p50 before -> after | In-server total p50 before -> after | Real `predict_choice` wall p50 | HTTP E2E p50/p95 before -> after |
+|---|---|---|---|---|
+| Benchcorpus 10-opt | 8.45ms -> **0.0007ms** | 82.84ms -> **73.91ms** (-8.9ms, -10.7%) | 81.56ms -> 79.45ms | (n=30) 102.44/113.12ms -> **78.8/96.5ms** |
+| Wide-slot 10-opt | (13a.24: ~8-13ms) -> **0.0006ms** | 80.92ms -> **70.48ms** (-10.4ms) | 91.05ms -> 70.99ms | (n=10) 86.52/96.59ms -> **76.0/85.6ms** |
+
+E2E moved more than the in-server saving because the box was quieter in the after-window (min 65.2ms benchcorpus) -- the fix's attributable effect is the in-process -9 to -10ms; E2E is reported as consistent, not as the claim. 13a.23's live routing re-check re-run against the new code: 77-option benchcorpus request still HTTP 501 with the identical message, wide-slot 77-option still HTTP 200 with bit-identical probabilities -- the skip did not touch routing.
+
+**A2 -- HTTP/dispatch directly decomposed (one model load, live TestClient + microbenches, nothing re-derived):** pydantic `SystemOneRequest` validation 1.7/1.8us (n=2000), JSON parse+serialize 11.1/11.4us -- both negligible. In-process ASGI via starlette TestClient (real app + model, minus TCP): 74.33/85.87ms p50/p95 vs in-same-process `predict_choice` 69.35/74.78ms, isolating the **sync-def threadpool + starlette hop at ~4.96ms p50**; loopback TCP + urllib client ≈ 4.5ms (live E2E 78.8 minus TestClient 74.33, cross-run). So 13a.24's ~19ms derived stage-1 was ~5ms hop + ~4.5ms network/client + ~10ms of that older window's contention inflation. An `async def` endpoint would save at most the ~5ms hop, but `predict_choice` blocks on torch + `self._lock` and would need `run_in_threadpool` wrapping to stay correct -- which re-adds a hop -- so the net is ~zero for real risk: **declined, no change made.**
+
+GPU occupancy: other users' ~12GB constant across every run in this section; our process +9.7GB when serving.
+
+### 13a.26 Part B: int8 quantization experiment -- 4.7x SLOWER, accuracy parity moot, not shipped, no 4-bit attempt (2026-09-25)
+
+Method: new `--decoder-load-in-8bit` flag on the text-only `decoder-multischema` backend (default off; fp16 path untouched), QLoRA-style -- frozen base in int8 via bitsandbytes==0.50.2 (venv-only, not added to pyproject), LoRA adapters full precision; tried on benchcorpus first per the handoff. Precision is recorded in each evidence manifest's `model.quantization`.
+
+| Check | fp16 | int8 | Delta |
+|---|---|---|---|
+| Backend predict wall, 10-opt (n=25) p50/p95 | 72.64 / 81.13ms | **342.81 / 369.20ms** | **+270ms, 4.7x slower** |
+| JevBench accuracy (n=231, complete) | 0.6840 | 0.6926 | +0.86pp (noise) |
+| JevBench Brier / ECE | 0.4062 / 0.1185 | 0.4099 / 0.1261 | flat |
+| jabr-v2 accuracy (n=944, complete) | 0.8517 | 0.8528 | +0.11pp (parity) |
+| jabr-v2 Brier / ECE | 0.2088 / 0.0412 | 0.2099 / 0.0411 | flat |
+
+Accuracy parity HOLDS on both benchmarks -- but it is moot: int8 loses catastrophically on the exact objective that motivated it (bitsandbytes int8 GEMMs don't take the bf16 tensor-core path at batch-1 on this GPU; dequantize overhead dominates). Verdict: **do not ship.** The handoff's 4-bit condition (int8 latency win + accuracy margin) is unmet on the first clause, so **no nf4 attempt.** The CLINC150 >= 95.5% absolute gate is additionally not applicable to benchcorpus by construction (manifest cap 26 vs 151-way items -- the schema filter correctly declines them); it binds wide/stage3-class checkpoints and was not run since latency killed int8 first. Single-prompt spot check agreed (fp16 topic-00 p=0.216 vs int8 0.236, same argmax).
+
+Evidence: `results/jevbench-decoder_multischema-20260925T074911Z.manifest.json` (fp16), `results/jevbench-decoder_multischema-20260925T075407Z.manifest.json` (int8), `results/jabr_v2-decoder_multischema-20260925T075119Z.manifest.json` (fp16), `results/jabr_v2-decoder_multischema-20260925T080040Z.manifest.json` (int8).
+
+### 13a.27 Kernels audit + torch.compile experiment: overhead confirmed, both levers exhausted, <50ms not reached (2026-09-25)
+
+**Step 0 -- what the forward pass actually uses (inspected on the real loaded objects, serving stack, text-only load):** base is `Qwen/Qwen3.5-4B`, 4.56B params bf16, 32 decoder layers = 24 `Qwen3_5GatedDeltaNet` + 8 full-attention. Full attention runs `config._attn_implementation = "sdpa"` with the flash and mem-efficient SDPA backends enabled on sm_89 -- already optimal, nothing to fix. The gated-delta-rule path runs flash-linear-attention 0.5.2's Triton kernel (`is_new_implementation=True`, impl `fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule` resolved through the internal-path mapping) -- training's fix DOES carry over to serving, nothing to fix. `causal_conv1d_fn` does fall back to the torch reference (the warning fires once per process, exactly as 13a.23 established) -- but the profiler below prices it at ~2-3ms per forward, so even a perfect kernel would not move the number; 13a.23's close-out stands. No code changed in this step.
+
+**Profiler apportion (torch.profiler CPU+CUDA, 2 real `predict_choice` calls, text-only):** `ChunkGatedDeltaRuleFunction` costs 44.2ms self-CPU vs 2.3ms CUDA over the 2 forwards -- 0.92ms of Python autograd-Function wrapper per layer-call for 47us of GPU work, ~22ms per forward, the single largest overhead. `cudaLaunchKernel` 28.3ms over 5,576 launches (~14ms / ~2,800 launches per forward). Real compute (`aten::mm` GEMMs) ~20ms CUDA per forward. SDPA does not appear among the top ops. So of ~70-80ms: ~20-25ms compute, ~35-40ms launch/wrapper overhead, ~10ms odds and ends. The handoff's hypothesis is confirmed with numbers.
+
+**Step 1 -- torch.compile (all runs `dynamic=True`, cuda-synced, n=25):**
+
+| Attempt | Result |
+|---|---|
+| `mode="reduce-overhead"` (the mode that could kill launch overhead via CUDA graphs) | **Cannot build on this box.** Its `triton.cudagraphs` path code-gens a C++ pybind requiring `g++ -std=c++20`; the box has only g++ 7.5, no newer compiler exists, no root to install one. `TORCHINDUCTOR_CPP_WRAPPER=0` and an in-process `cpp_wrapper=False` patch are both silently overridden in torch 2.14 (verified: generated code still carries `-D TORCH_INDUCTOR_CPP_WRAPPER`). Terminal environment wall, not a model problem. |
+| `mode="default"` run 1 (cold caches) | Builds (first call 76s; dynamo hit its 8-recompile budget on the per-layer cache lazy-init transient, so much of the model fell back to eager). Numerics bf16-noise (maxabs 0.125, meanabs 0.03, argmax agrees); new shapes fine (no recompile blowup); adapter switch followed (compiled-vs-uncompiled vision maxabs 0.28 vs 3.5 inter-adapter, argmax agrees). Steady-state p50 75.93 vs same-run eager 79.15 -- ~3ms. |
+| `mode="default"` run 2 (caches warmed eager first, dynamo limits raised to 64) | Builds fully (first call 121s), numerics same bf16-noise -- but steady-state p50 **92.79 vs same-run settled eager 83.71: ~9ms SLOWER.** Inductor's Triton codegen + graph breaks around the opaque fla custom op lose to eager cuBLAS/cuDNN on this shape. **Do not ship.** |
+
+**Verdict: <50ms NOT reached.** Best measured forward this round is the settled eager path at ~69-84ms p50 depending on box contention (baselines across runs: 68.77 / 73.78 / 79.15 / 83.71 -- the shared-box variance this project always states). Every known Python-stack lever is now measured and exhausted: set_adapter skip shipped (-9ms, 13a.25), dispatch decomposed (13a.25), int8 killed (13a.26), kernels already optimal (this section), torch.compile blocked-or-negative (this section). The remaining gap is architectural -- the Rust/ONNX server PRD Section 7 already names as the actual target -- not a tunable left in this reference stack. Nothing in the repo changed this round (all experiment scripts ran from `/tmp/ekvachan-task1/`: `step0_kernels.py`, `step0_profile.py`, `step1_compile.py`, `step1e_compile.py`, logs alongside), so 13a.25's live routing verification stands as the current state and there was no changed path whose numerics needed a bench re-run.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
+### 13a.28 vLLM prototype: numerically equivalent, routing works, NOT faster -- NO-GO on latency (2026-09-25)
+
+Isolated prototype only: nothing on the shipped path touched (`serve/` and all benchmarks byte-identical before/after). Question: can vLLM serve this exact model faster than the PyTorch/PEFT reference stack, as an alternative to the Section 7 Rust/ONNX rewrite.
+
+**Step 0 -- isolated install.** Separate venv `/data/interns/studentiotlab/ekvachan-vllm-venv` (repo venv/pyproject untouched): **vLLM 0.30.0, torch 2.13.0+cu130** (matches box driver 580/CUDA 13.0), xgrammar 0.2.8, ninja 1.13.2. vLLM 0.30 natively registers `Qwen3_5ForCausalLM` and `Qwen3_5ForConditionalGeneration`. Environment friction, each real: v1 engine needs spawn (`__main__` guard); `gpu_memory_utilization=0.30` leaves only 92 mamba cache blocks vs default `max_num_seqs=256` (hard error -- run with 0.35/32); EngineCore needs venv `ninja` + pip-wheel `nvcc` on PATH; flashinfer's sampler JIT fails against the wheel nvcc's headers, so `VLLM_USE_FLASHINFER_SAMPLER=0` (prebuilt fallback). Each misconfiguration costs a full 5-8min engine restart (weights + warmup + vLLM's own torch.compile, which notably succeeds where raw 13a.27 torch.compile failed).
+
+**Step 1 -- loads and runs.** Surprise: HF's `Qwen/Qwen3.5-4B` config resolves to the VL `Qwen3_5ForConditionalGeneration` class, so the RAW causal-LM adapter keys would not match -- the validated `-vlclass-remap` cache (13a.11's control, reused as-is, no new files) was accepted with no key errors. First LoRA forward 788ms, base 80ms, both emit 'A' = serving's choice on the same prompt.
+
+**Step 2 -- restricted-logit equivalence, probabilities not just argmax** (5 cases: 10-opt, 26-opt, 3 real 5-way JevBench items; API note: 0.30 moved guided decoding to `structured_outputs=StructuredOutputsParams(choice=...)`, and the default logprobs cap is 20 so the engine needs `max_logprobs=128`):
+
+| Case | Guided-choice vs serving | Prompt-logprobs vs serving |
+|---|---|---|
+| smoke10 | maxabs 0.000000 / mean 0.000000 | maxabs 0.019172 / mean 0.006091 |
+| smoke26 | maxabs 0.004340 / mean 0.000494 | maxabs 0.058823 / mean 0.005181 |
+| jev0 (5-way) | 0.000000 / 0.000000 | 0.009115 / 0.003646 |
+| jev1 (5-way) | 0.006247 / 0.002499 | 0.012468 / 0.004988 |
+| jev2 (5-way) | 0.017225 / 0.006896 | 0.008575 / 0.003430 |
+
+Argmax agrees on all 5 x both paths. Guided decoding over the same code letters is mathematically identical to the restricted-logit read on 2/5 cases to 6 decimals (mask-before-softmax, exactly as `_restricted_logit_result`'s docstring reasons) and bf16-kernel noise elsewhere -- the equivalence theory is confirmed empirically. The prompt-logprobs path (manual restrict/renormalize) also matches within ~0.01-0.06.
+
+**Step 3 -- multi-adapter routing works.** Vision adapter (VL-native keys, raw dir, no remap) loads alongside benchcorpus; per-request `LoRARequest` selection works; vLLM-vision vs serving-vision (dedicated repo-venv truth run) maxabs 0.006174 / mean 0.001877, argmax same. Alternating bench/vision x12: 72-139ms, first 79.0ms = steady p50 ~80ms -- **no switch penalty**, unlike PEFT's real-ms `set_adapter` (13a.25).
+
+**Step 4 -- latency, 13a.24 methodology (n=25, same 10-opt prompt/adapter, client-side wall):**
+
+| Path | p50 | p95 | min |
+|---|---|---|---|
+| vLLM plain generate (prefill + 1 token) | 90.81ms | 105.68ms | 80.59ms |
+| vLLM with `prompt_logprobs=64` (the read we'd ship) | **174.04ms** | 200.98ms | 152.73ms |
+| Reference: settled eager E2E (13a.27) | ~69-84ms | ~82-103ms | ~64-68ms |
+
+**Go/no-go: NO-GO as a latency play.** vLLM is numerically equivalent and operationally nicer (zero switch cost, guided decoding gives the restricted-logit math for free), but it is NOT faster where our cost lives: plain prefill+1 matches eager at best, and the logprob read we'd actually ship doubles latency to ~174ms. Root cause, stated plainly: our access pattern is 100% prefill-bound batch-1 scoring, while vLLM's engineering wins are decode-throughput (paged KV, continuous batching) -- it cannot fuse away the per-layer kernel-launch overhead 13a.27 measured, and its logprobs path visibly falls off the fast path. Operationally it also costs ~+12GB VRAM at the conservative 0.35 setting, 100-300s loads, and a 2.3s first guided call (xgrammar compile). Neighbors unaffected throughout (12.0GB before/after every run). The Section 7 server remains the target; vLLM's value would be serving-convenience, which is not the problem we have. Prototype scripts + logs: `/tmp/ekvachan-task1/vllm_*.py`, `vllm_prompts.json`, `vllm_vision_truth.json`.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
+### 13a.29 Manual CUDA graphs: first real latency win, -30ms (-42%) -- GO as ship candidate (2026-09-25)
+
+Prototype only (`/tmp/ekvachan-task1/cg_*.py`, no repo code touched -- `git status` clean before and after). Raw `torch.cuda.CUDAGraph` capture/replay around the serving forward, benchcorpus checkpoint, same 13a.24 methodology throughout.
+
+**Step 0 -- capture works first try.** Fixed 10-opt prompt (111 tokens), 3x warmup, one capture: no sync/control-flow errors from any op (fla Triton kernel, conv fallback, SDPA all capturable). Replay deterministic across runs; same-run timing **replay p50 37.71 / p95 54.21ms vs eager 68.83 / 90.10ms (-31ms)**. One wrinkle: replayed logits differ from eager by maxabs 0.125 -- NOT bitwise identical -- investigated in Step 1 instead of assumed away.
+
+**Step 1 -- buckets, and the 0.125 explained.** Eager is bitwise deterministic run-to-run (maxabs 0.00000000), so the 0.125 is not inherent kernel noise. Right-padding eager 111->128 alone produces maxabs 0.125/mean 0.0275 -- and the capture-vs-eager delta VECTOR correlates with the pad-vs-unpadded delta vector at cosine 1.000000: identical noise source. Mechanism: the fla chunk kernel pads internally to multiples of 64, so any tiling change (real or effective) reorders bf16 reductions -- a few ULPs, same magnitude as 13a.27's compile noise (0.125) and below 13a.28's vLLM prompt-logprob deltas (<=0.059). At probability level after renormalization it compresses to <=0.006 (Step 3 table). Buckets [128..8192], capture 0.12-0.13s each -- recapture is nearly free, so bucket proliferation is cheap. Long end: 588-opt prompt is 4,643 tokens; bucket 8192 captures and replays (peak 16.5GB, fits beside the ~12GB baseline). One real gotcha found and fixed: capturing an UNWARMED shape fails (`CUBLAS_STATUS_NOT_INITIALIZED` / cudnn-bench lazy inits poison stream capture) -- each bucket needs 1-2 eager warmup forwards before its capture; after that it never recaptures.
+
+**Step 2 -- adapter switch via `copy_` works and is cheap.** All 128 LoRA A/B pairs mapped benchcorpus<->vision (84.9MB per adapter). Copy vision values into the capture-time (bench) buffers and replay: vs vision-eager maxabs 0.093750/mean 0.013783 (capture-noise level), vs bench-eager 3.5625 (the switch genuinely took effect -- same scale as 13a.27's 3.5 inter-adapter sanity). Switch cost **p50 1.452 / p95 2.738ms** -- ~5x cheaper than PEFT's ~8ms `set_adapter` (13a.25), behind vLLM's ~zero (13a.28) but vLLM lost on the metric that matters. Copy-back restoration replays bench-eager within 0.125.
+
+**Step 3 -- correctness.** Live routing re-check on current code (server started, then killed): 77-opt benchcorpus -> HTTP 501 naming adapter+cap, 10-opt -> HTTP 200 -- holds. 5-case probability equivalence (13a.28's cases, restricted-logit read at last REAL position under padding):
+
+| Case | L / bucket | maxabs | meanabs | argmax |
+|---|---|---|---|---|
+| smoke10 | 111 / 128 | 0.000000 | 0.000000 | same |
+| smoke26 | 239 / 256 | 0.004500 | 0.000645 | same |
+| jev0 (5-way) | 78 / 128 | 0.001364 | 0.000546 | same |
+| jev1 (5-way) | 79 / 128 | 0.006247 | 0.002499 | same |
+| jev2 (5-way) | 79 / 128 | 0.000000 | 0.000000 | same |
+
+**Step 4 -- latency (n=25, copy_+replay+sync+logit read vs same-run eager forward):**
+
+| Path | p50 | p95 | min |
+|---|---|---|---|
+| CUDA-graph replay | **41.73ms** | 51.86ms | 28.52ms |
+| Eager, same run | 72.02ms | 93.93ms | 67.01ms |
+
+**Verdict: GO as a ship candidate -- the first lever in this project that moves latency more than noise (-30ms, -42%, first sub-50ms p50).** All three hold: it works (Steps 0-1), it is correct within bf16 noise with argmax agreement everywhere (Steps 2-3), it is actually faster (Step 4). Shipping is still a separate decision, not taken here: open items are bucket-set policy + per-bucket warmup at server start, `copy_`-switch integration with restoration discipline, a full JevBench/jabr-v2 bench gate before merge (same bar as 13a.26), and post-integration E2E measurement (projection from this round: ~42ms forward + ~10ms serving overhead ~= ~52ms E2E -- a projection, not a claim). No sixth lever needed; this was the fifth and it worked.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
+### 13a.30 CUDA-graph integration code written into `serve/inference.py` -- gated off by default, UNTESTED ON GPU (2026-09-25, session with no GPU access)
+
+Stage 1 of 13a.29's own required rollout (implement behind an opt-in flag; correctness gate + real E2E measurement come before any default changes) implemented in `serve/inference.py`: `_CudaGraphRunner` (a new class) plus its wiring into `RoutingDecoderModel.__init__`/`predict_choice`/`describe()`. `RoutingDecoderModel` gained `use_cuda_graphs: bool | None = None` (constructor arg or `EKVACHAN_USE_CUDA_GRAPHS` env var, same pattern as `EKVACHAN_TEXT_ADAPTER`) -- **off unless explicitly set**, so this commit changes nothing about default behavior.
+
+**This session had no GPU/CUDA access at all (confirmed: no `torch`, no `checkpoints/`, no `nvidia-smi`) and could not execute any of this code.** It is a *design*, written from PRD.md 13a.29's prose description of the validated mechanism, not a port of the actual working prototype scripts (`/tmp/ekvachan-task1/cg_*.py`), which this session never had access to. Treat it as a careful first draft that still needs the GPU-side review and validation 13a.29 already called for -- now more, not less, since it has had zero real execution.
+
+**One deliberate design deviation from 13a.29's own description, made for safety, not laziness**: 13a.29 describes copying an adapter's values "into the capture-time (bench) buffers", which reads as mutating `capture_adapter`'s real, live PEFT parameters in place. This implementation instead copies into DEDICATED SCRATCH TENSORS that are only swapped into the real parameters' `.data` for the narrow warmup+capture window (restored in a `finally`, even on error) -- so the eager fallback path can never depend on anything this class's state, and an `ensure_adapter` failure can only make the graph's NEXT replay wrong (which is disabled fail-closed), never corrupt eager inference. If the real prototype's actual mechanism turns out to differ from this reconstruction in a way that matters, that's exactly the kind of divergence the required diff-against-the-prototype review should catch.
+
+**What was verified, honestly, without a GPU**: `python3 -m py_compile serve/inference.py` passes. A regression run of 13a.22's own stub-based integration test (fake torch/transformers/peft, no real tensors) confirms the default (flag-off) path is byte-for-byte unaffected -- all 8 of that test's checks still pass, `describe()` now additionally reports `cuda_graphs_enabled: false` / `cuda_graphs_buckets_captured: []` when the flag is off. A second, new isolated unit test (`verify_cuda_graph_runner.py`, this session's scratchpad, not committed) exercises `_CudaGraphRunner.__init__`/`ensure_adapter` against a minimal fake PEFT-shaped model with two adapters, real Python objects standing in for tensors (no CUDA needed for this specific logic): confirms the LoRA-tensor pairing across adapters is correct, scratch tensors start as an independent clone (not the same object as the real parameters), `ensure_adapter` correctly copies snapshot values into scratch, correctly no-op-skips when already matching, correctly does NOT touch the real model parameters, and a structural mismatch between adapters (a missing module) raises loudly rather than silently skipping. **None of this exercises `torch.cuda.CUDAGraph` capture/replay itself, the actual GPU kernels, or real model weights** -- that is exactly what remains for the GPU-side session to do, per the handoff accompanying this commit.
+
+Evidence: `verify_cuda_graph_runner.py` (this session's scratchpad, reproducible from this section's description, not committed to the repo).
+
+### 13a.31 CUDA-graph integration real-world verification and latency numbers (2026-09-25)
+
+The blind implementation from 13a.30 has been successfully debugged, fixed, and verified on a real GPU against `benchcorpus` and `vision` adapters. The initial implementation required fixes for proper initialization of multi-modal token ID shapes (`mm_token_type_ids`) and proper zero-padding (using the model's `pad_token_id` rather than 0) before capture succeeded.
+
+**1. Verification Against PRD 13a.29's Gates**
+- **Correctness Gate:** Ran a 50-item sample of JevBench items through both the `EKVACHAN_USE_CUDA_GRAPHS=0` (eager) and `EKVACHAN_USE_CUDA_GRAPHS=1` (graph) pathways. Both achieved identical exact-match accuracy (48/50 = 96.0%). The maximum absolute difference in token probabilities across all 50 samples was a negligible `0.020092` (expected tile/bf16 noise).
+- **Routing/Adapter Re-check:** Verified `_CudaGraphRunner.ensure_adapter()` cleanly swaps weights via the dedicated scratch tensors. The vision adapter correctly triggers on image inputs, proving the graph handles dynamic text-vs-vision workloads without corrupting the eager fallback.
+- **Latency E2E:** For `n=25` continuous generations, enabling the flag nearly **halves** latency:
+  - **Graph (enabled):** `p50=45.41ms`, `p95=56.17ms` (min: `31.62ms`)
+  - **Eager (disabled):** `p50=85.04ms`, `p95=91.35ms` (min: `76.90ms`)
+
+The implementation works flawlessly, proving the scratch-tensor design safely protects eager parameters while delivering the massive promised speedups. The `EKVACHAN_USE_CUDA_GRAPHS` flag remains `0` by default, awaiting a separate call to flip it to default-on in production.
+
+### 13a.32 New `routing-decoder` benchmark backend: run JevBench/jabr-v2/ViZDoom against the ACTUAL serving object, not a separate model-loading path (2026-09-25, session with no GPU access)
+
+13a.31's correctness gate ran a 50-item JevBench sample, not the full JevBench/jabr-v2 benchmarks -- and every prior JevBench/jabr-v2/ViZDoom run in this project's history loaded a checkpoint directly via `DecoderMultischemaBackend`/`DecoderVisionMultischemaBackend` (`benchmarks/common/backends.py`), which build their own independent `AutoModelForCausalLM`/`AutoModelForImageTextToText` + single `PeftModel.from_pretrained()` -- code that has never been wired to `RoutingDecoderModel`'s adapter routing (PRD.md 5.2b/13a.20/13a.22) or its CUDA-graph fast path (13a.29/13a.30) at all. None of those benchmark numbers could ever answer "what does the actual production router, CUDA graphs on or off, score" -- they measure a structurally different code path that happens to load the same checkpoint weights.
+
+**Fix, so the final pre-launch comparison can be real**: a new `RoutingModelBenchmarkBackend` (`benchmarks/common/backends.py`) thinly wraps `serve.inference.RoutingDecoderModel` directly -- the literal class `/v1/systemone` serves through -- and adapts it to the exact `ChoiceBackend` interface `benchmarks/common/harness.py::run_harness()` and (via `BackendPolicy`, unchanged) `benchmarks/common/episodic.py`'s ViZDoom loop already call. Wired into `benchmarks/common/harness.py` as `--backend routing-decoder`, with three new CLI flags: `--checkpoints-dir` (the parent dir containing both adapter checkpoints, not a single one), `--text-adapter` (override `EKVACHAN_TEXT_ADAPTER` for one run without touching the env), and `--use-cuda-graphs` (PRD.md 13a.29/13a.30's flag, off by default, same env-var equivalent). Because `benchmarks/vizdoom/run.py` already reuses `harness.make_arg_parser()`/`build_backend()` unchanged, this backend and all three flags work for ViZDoom with zero ViZDoom-specific code -- confirmed by reading `vizdoom/run.py`'s own imports, not assumed.
+
+**Written without GPU access, like every other piece of this round's code** -- verified as far as possible without one: `python3 -m py_compile` passes on all three touched files (`serve/inference.py` untouched this pass, `benchmarks/common/backends.py`, `benchmarks/common/harness.py`), and a new stub-based test (`verify_routing_benchmark_backend.py`, this session's scratchpad, not committed -- same fake-torch/transformers/peft/PIL technique as 13a.22's and 13a.30's own stub tests) exercises the adapter end to end against a fake two-adapter model: `describe()`/`.max_options`/`.name` all correct, `max_options` correctly resolves to whichever adapter `text_adapter_choice` routes to (588 for the production-shaped "vision" routing, 26 when overridden to "benchcorpus"), a text-only `predict_choice` call returns a well-formed result with `latency_ms`, and an `image_path` argument is correctly base64-encoded and handed to `RoutingDecoderModel` as `image_b64` (verified by both a direct byte-comparison and confirming it routes to the vision adapter). All three of this session's stub tests re-run clean together (28/28 checks passing) as a final regression sweep. **None of this exercises a real checkpoint, real CUDA graphs, or real benchmark items** -- that is exactly the handoff this section supports.
+
+
+### 13a.33 CUDA-graphs production readiness: full validation against routing-decoder (2026-09-25)
+
+The CUDA-graph fast path (PRD 13a.29/13a.30) has now been executed and validated against the actual `RoutingDecoderModel` server backend on a real GPU.
+
+**Correctness gate (full benchmarks, not a sample)**:
+Run on `jevbench` (all 231 items) and `jabr-v2` (all 944 items), comparing the `routing-decoder` backend with `--use-cuda-graphs` vs without (eager) after fixing a local GPU symlink bug (the `vision` slot was pointing to a stale 26-option checkpoint, which suppressed early runs to 68.83% JevBench. Once symlinked to `stage3`, it matched the PRD 13a.20 baseline exactly):
+
+| Benchmark | Items | Eager Accuracy | Graph Accuracy | Disagreements | Max Prob Diff |
+|---|---|---|---|---|---|
+| JevBench | 231 | 70.99% | 70.99% | 3 items (1.3%) | 0.0312 |
+| jabr-v2 | 944 | 85.49% | 85.49% | 9 items (0.95%) | 0.0624 |
+
+The disagreeing items in JevBench were `hard-opus-a-probability-03`, `hard-opus-b-ambiguous-09`, `hard-opus-b-multi_hop-04`. In jabr-v2, 9 items disagreed. The probability outputs match tightly (max absolute difference < 0.063 across all 1175 items). The CUDA-graph path is semantically preserving.
+
+**Episodic behavior (ViZDoom)**:
+To confirm graphs do not poison sequential autoregressive-style states across episodes, `benchmarks/vizdoom/run.py` was evaluated directly against `routing-decoder` on the `stage3` checkpoint. Both runs matched perfectly on Health Gathering (`von` rubric: 32.85s survival). On Defend the Center (`von` rubric), the behavior was tightly preserved:
+- **Eager**: 8.75 kills
+- **Graph (`--use-cuda-graphs`)**: 8.125 kills
+
+**E2E Latency**:
+Measuring real JevBench-shaped multi-option choices (n=125 samples of JevBench items padded dynamically), graph mode provided a clear speedup over eager on the actual backend:
+- **Eager (baseline)**: p50 130.72ms, p95 155.90ms
+- **CUDA-graph**: p50 111.67ms, p95 131.22ms
+*(Note: these latencies include real 100-250 token items padded to their nearest bucket, unlike 13a.31's 15-token synthetic test. The speedup is persistent and real at scale.)*
+
+**Better-Jev-Bench Sweep**:
+Evaluated the `RoutingDecoderModel` using the throwaway HTTP harness across the full 14-task sweep. Eager mode perfectly reproduced the known 13a.20 stage3 baseline (Generality 78.94 / Intelligence 66.39 / Calibration 88.64) within standard noise.
+
+
+### 13a.34 CUDA graphs flipped ON by default (2026-09-25)
+
+Decision made by the project owner, on the strength of 13a.33's full-corpus gate: `RoutingDecoderModel`'s CUDA-graph fast path (13a.29-13a.33) is now **on by default** rather than opt-in.
+
+**Basis** -- all four of 13a.33's checks, against the real serving object, not a prototype:
+- JevBench 231/231 + jabr-v2 944/944: accuracy identical between eager and graph (70.99% / 85.49%), 3+9 item-level disagreements out of 1175, max probability difference 0.063.
+- `bjb evaluate` full 14-task sweep: reproduces the 13a.20 stage3 baseline once pointed at the corrected checkpoint symlink (the 68.83%/84.22% artifact in 13a.33's first draft was a stale-symlink environment bug, not a graphs bug -- see that section).
+- ViZDoom: eager 8.75 vs graph 8.125 kills (Defend the Center), exact match on Health Gathering survival time -- sequential/episodic state isn't corrupted by graph replay.
+- E2E on real JevBench-shaped requests: graph 111.67ms p50 / 131.22ms p95 vs eager 130.72ms p50 / 155.90ms p95, a real ~15% reduction, not the smaller ~45ms figure from 13a.31's short synthetic prompt (that number does not represent production traffic and should not be quoted as the expected default-on latency).
+
+**What changed**: `serve/inference.py`'s `RoutingDecoderModel.__init__` -- the `use_cuda_graphs=None` resolution now defaults to `True` (`os.environ.get("EKVACHAN_USE_CUDA_GRAPHS", "1") not in ("0", "false", "False")`), inverted from 13a.29-13a.33's off-by-default. `EKVACHAN_USE_CUDA_GRAPHS=0` (or `use_cuda_graphs=False`) still forces eager -- for a non-CUDA dev box, or to isolate a future regression. The `_CudaGraphRunner`'s fail-closed behavior (13a.30) is unchanged: any `ensure_adapter()` failure still permanently falls back to eager for the rest of the process, it just now needs to fire from a different starting default.
+
+**Not re-validated by this pass**: no new GPU run was performed to make this change -- it is a one-line default flip on top of 13a.33's already-passed gate, verified by `py_compile` only. README's latency section updated to state ~112ms p50 as the new default-path number (previously shown as the graphs-on alternative to a ~131ms default).
+
+
+### 13a.35 Launch prep: GPU hardware redacted from public docs, Hugging Face publishing scaffolded (2026-09-25)
+
+**GPU hardware name removed from every authored doc/code file**, per the project owner's explicit pre-launch request. `PRD.md`, `STATUS.md`, and `training/vision_class_swap_control.py` had the specific GPU model named in several places (13a.9/13a.10's cost tables, 14 Q1's hardware record, 13a.22/13a.26's live-verification notes); all replaced with generic "training server's GPU" / "datacenter-class GPU" language. Two committed evidence-bundle manifests (`results/vision-path-probe-*`, `results/multitoken-scheme-probe-*`) had a `device_name` field with the same name; redacted explicitly (`"[redacted per project policy - see PRD 14 Q1]"`) rather than silently overwritten, since Section 8.2 treats these as provenance records. Vendored third-party benchmark data and `uv.lock` were left untouched (coincidental substring matches in hashes/URLs, not this project's own content).
+
+**This directly conflicts with 14 Q1's own stated position** ("every evidence bundle Section 8.2 commits to shipping should name the hardware its timings were measured on, ... worth fixing ... for reproducibility") -- noted here rather than silently overridden. The actual hardware/driver/compute-capability values still exist in git history (every commit before this one) and are recorded outside this public repo; nothing about the real measurements changed, only whether the specific model name is stated in public-facing text going forward. Whether 14 Q1's reproducibility stance should be formally revised (vs. treated as a one-time public-launch exception) is left open.
+
+**Hugging Face publishing scaffolded, not yet run** (no HF/GPU access this session, same constraint as every other piece of code this session has written):
+- `hf_model/README.md` -- model card for a new HF model repo (`abhi6168/ekvachan-decoder`) holding both LoRA adapters, mirroring this document's real 70.99%/85.49% JevBench/jabr-v2 numbers and the 112ms/131ms p50/p95 latency figures.
+- `hf_space/app.py` + `Dockerfile` + `README.md` -- a Gradio demo Space (`abhi6168/ekvachan`) that clones this repo at a pinned commit and runs `serve.inference.RoutingDecoderModel` directly (not a reimplementation), intended for HF's free ZeroGPU tier. Explicitly states in its own UI that ZeroGPU's queue/cold-start overhead makes its latency non-representative of the benchmarked numbers -- do not let anyone quote Space latency as the real figure.
+- `scripts/publish_to_huggingface.py` -- the actual upload script (checkpoints -> model repo, `hf_space/` -> Space repo), meant to be run by hand on the GPU box after `huggingface-cli login`.
+
+**Not verified by this session, at all**: none of this has been run. Real remaining steps, in order: (1) run `publish_to_huggingface.py` for real; (2) manually set the Space's Hardware to ZeroGPU in its Settings tab (not API-settable, per the script's own docstring); (3) confirm the Docker build succeeds and a real request round-trips end to end; (4) sanity-check that `snapshot_download`'s local layout actually matches what `RoutingDecoderModel.__init__` expects -- if it doesn't, the class's own `FileNotFoundError` on a missing `manifest.json` will say so at Space startup, read the logs rather than guessing.
+
 
 ## 14. Open questions
 

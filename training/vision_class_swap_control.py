@@ -27,7 +27,7 @@ metrics, same temperature-fitting procedure) via `decoder_lora_lib`'s shared
 evaluate()/full_report() -- so this is a real forward-pass measurement, not
 an assumption that a remap "should" work.
 
-Run (~20 min on the L40S, no training):
+Run (~20 min on the training server's GPU, no training):
     uv run python3 -u -m training.vision_class_swap_control
 """
 
