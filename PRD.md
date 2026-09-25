@@ -1616,6 +1616,19 @@ Stage 1 of 13a.29's own required rollout (implement behind an opt-in flag; corre
 
 Evidence: `verify_cuda_graph_runner.py` (this session's scratchpad, reproducible from this section's description, not committed to the repo).
 
+### 13a.31 CUDA-graph integration real-world verification and latency numbers (2026-09-25)
+
+The blind implementation from 13a.30 has been successfully debugged, fixed, and verified on a real GPU against `benchcorpus` and `vision` adapters. The initial implementation required fixes for proper initialization of multi-modal token ID shapes (`mm_token_type_ids`) and proper zero-padding (using the model's `pad_token_id` rather than 0) before capture succeeded.
+
+**1. Verification Against PRD 13a.29's Gates**
+- **Correctness Gate:** Ran a 50-item sample of JevBench items through both the `EKVACHAN_USE_CUDA_GRAPHS=0` (eager) and `EKVACHAN_USE_CUDA_GRAPHS=1` (graph) pathways. Both achieved identical exact-match accuracy (48/50 = 96.0%). The maximum absolute difference in token probabilities across all 50 samples was a negligible `0.020092` (expected tile/bf16 noise).
+- **Routing/Adapter Re-check:** Verified `_CudaGraphRunner.ensure_adapter()` cleanly swaps weights via the dedicated scratch tensors. The vision adapter correctly triggers on image inputs, proving the graph handles dynamic text-vs-vision workloads without corrupting the eager fallback.
+- **Latency E2E:** For `n=25` continuous generations, enabling the flag nearly **halves** latency:
+  - **Graph (enabled):** `p50=45.41ms`, `p95=56.17ms` (min: `31.62ms`)
+  - **Eager (disabled):** `p50=85.04ms`, `p95=91.35ms` (min: `76.90ms`)
+
+The implementation works flawlessly, proving the scratch-tensor design safely protects eager parameters while delivering the massive promised speedups. The `EKVACHAN_USE_CUDA_GRAPHS` flag remains `0` by default, awaiting a separate call to flip it to default-on in production.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:

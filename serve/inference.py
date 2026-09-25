@@ -345,10 +345,11 @@ class _CudaGraphRunner:
     but the eager fallback path stays trustworthy unconditionally.
     """
 
-    def __init__(self, model, device: str, capture_adapter: str, loaded_adapters: set[str]):
+    def __init__(self, model, device: str, capture_adapter: str, loaded_adapters: set[str], pad_token_id: int = 0):
         self.model = model
         self.device = device
         self.capture_adapter = capture_adapter
+        self.pad_token_id = pad_token_id
         self._graphs: dict[int, dict] = {}
         self._active_adapter_in_scratch: str | None = None  # scratch starts uninitialized
 
@@ -440,8 +441,9 @@ class _CudaGraphRunner:
         if cached is not None:
             return cached
 
-        input_ids = torch.zeros((1, bucket), dtype=torch.long, device=self.device)
+        input_ids = torch.full((1, bucket), self.pad_token_id, dtype=torch.long, device=self.device)
         attention_mask = torch.ones((1, bucket), dtype=torch.long, device=self.device)
+        mm_token_type_ids = torch.zeros((1, bucket), dtype=torch.long, device=self.device)
 
         saved_data = [p.data for p in self._real_params]
         try:
@@ -456,13 +458,13 @@ class _CudaGraphRunner:
             # per bucket).
             for _ in range(2):
                 with torch.no_grad():
-                    run_forward_fn(input_ids, attention_mask)
+                    run_forward_fn(input_ids, attention_mask, mm_token_type_ids)
             torch.cuda.synchronize()
 
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
                 with torch.no_grad():
-                    static_out = run_forward_fn(input_ids, attention_mask)
+                    static_out = run_forward_fn(input_ids, attention_mask, mm_token_type_ids)
             static_logits = static_out.logits
         finally:
             for p, saved in zip(self._real_params, saved_data):
@@ -472,12 +474,13 @@ class _CudaGraphRunner:
             "graph": graph,
             "input_ids": input_ids,
             "attention_mask": attention_mask,
+            "mm_token_type_ids": mm_token_type_ids,
             "logits": static_logits,
         }
         self._graphs[bucket] = entry
         return entry
 
-    def replay(self, input_ids, attention_mask, bucket: int, run_forward_fn):
+    def replay(self, input_ids, attention_mask, bucket: int, run_forward_fn, mm_token_type_ids=None):
         """`input_ids`/`attention_mask`: the REAL (not bucket-padded)
         tensors, shape `[1, real_len]`. Pads into the bucket's static
         buffers, replays, and returns a CLONE of the logits at the real
@@ -491,10 +494,16 @@ class _CudaGraphRunner:
         if real_len > bucket:
             raise ValueError(f"real_len={real_len} exceeds bucket={bucket}")
 
-        entry["input_ids"].zero_()
+        entry["input_ids"].fill_(self.pad_token_id)
         entry["input_ids"][:, :real_len].copy_(input_ids)
         entry["attention_mask"].zero_()
         entry["attention_mask"][:, :real_len].copy_(attention_mask)
+        if "mm_token_type_ids" in entry:
+            if mm_token_type_ids is None:
+                entry["mm_token_type_ids"].zero_()
+            else:
+                entry["mm_token_type_ids"].zero_()
+                entry["mm_token_type_ids"][:, :real_len].copy_(mm_token_type_ids)
 
         entry["graph"].replay()
         torch.cuda.synchronize()
@@ -705,6 +714,7 @@ class RoutingDecoderModel:
                         device=self.device,
                         capture_adapter=self.TEXT_ADAPTER_NAME,
                         loaded_adapters=set(self._loaded_adapters),
+                        pad_token_id=int(self.processor.tokenizer.pad_token_id),
                     )
                     _LOGGER.warning(
                         "CUDA-graph path ENABLED (%d LoRA tensors tracked, capture_adapter=%r) "
@@ -880,7 +890,7 @@ class RoutingDecoderModel:
                 real_len = enc["input_ids"].shape[1] if "input_ids" in enc else None
                 bucket = (
                     next((b for b in CUDA_GRAPH_BUCKETS if b >= real_len), None)
-                    if real_len is not None and set(enc.keys()) <= {"input_ids", "attention_mask"}
+                    if real_len is not None and set(enc.keys()) <= {"input_ids", "attention_mask", "mm_token_type_ids"}
                     else None
                 )
                 if bucket is not None:
@@ -890,7 +900,8 @@ class RoutingDecoderModel:
                             enc["input_ids"],
                             enc["attention_mask"],
                             bucket,
-                            lambda ids, mask: self.model(input_ids=ids, attention_mask=mask),
+                            lambda ids, mask, mm: self.model(input_ids=ids, attention_mask=mask, mm_token_type_ids=mm),
+                            mm_token_type_ids=enc.get("mm_token_type_ids"),
                         )
                     except Exception:
                         # ensure_adapter/replay failing here can only leave
