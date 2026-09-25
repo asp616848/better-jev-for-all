@@ -1573,6 +1573,37 @@ Argmax agrees on all 5 x both paths. Guided decoding over the same code letters 
 
 GPU occupancy: other users' ~12GB constant across every run in this section.
 
+### 13a.29 Manual CUDA graphs: first real latency win, -30ms (-42%) -- GO as ship candidate (2026-09-25)
+
+Prototype only (`/tmp/ekvachan-task1/cg_*.py`, no repo code touched -- `git status` clean before and after). Raw `torch.cuda.CUDAGraph` capture/replay around the serving forward, benchcorpus checkpoint, same 13a.24 methodology throughout.
+
+**Step 0 -- capture works first try.** Fixed 10-opt prompt (111 tokens), 3x warmup, one capture: no sync/control-flow errors from any op (fla Triton kernel, conv fallback, SDPA all capturable). Replay deterministic across runs; same-run timing **replay p50 37.71 / p95 54.21ms vs eager 68.83 / 90.10ms (-31ms)**. One wrinkle: replayed logits differ from eager by maxabs 0.125 -- NOT bitwise identical -- investigated in Step 1 instead of assumed away.
+
+**Step 1 -- buckets, and the 0.125 explained.** Eager is bitwise deterministic run-to-run (maxabs 0.00000000), so the 0.125 is not inherent kernel noise. Right-padding eager 111->128 alone produces maxabs 0.125/mean 0.0275 -- and the capture-vs-eager delta VECTOR correlates with the pad-vs-unpadded delta vector at cosine 1.000000: identical noise source. Mechanism: the fla chunk kernel pads internally to multiples of 64, so any tiling change (real or effective) reorders bf16 reductions -- a few ULPs, same magnitude as 13a.27's compile noise (0.125) and below 13a.28's vLLM prompt-logprob deltas (<=0.059). At probability level after renormalization it compresses to <=0.006 (Step 3 table). Buckets [128..8192], capture 0.12-0.13s each -- recapture is nearly free, so bucket proliferation is cheap. Long end: 588-opt prompt is 4,643 tokens; bucket 8192 captures and replays (peak 16.5GB, fits beside the ~12GB baseline). One real gotcha found and fixed: capturing an UNWARMED shape fails (`CUBLAS_STATUS_NOT_INITIALIZED` / cudnn-bench lazy inits poison stream capture) -- each bucket needs 1-2 eager warmup forwards before its capture; after that it never recaptures.
+
+**Step 2 -- adapter switch via `copy_` works and is cheap.** All 128 LoRA A/B pairs mapped benchcorpus<->vision (84.9MB per adapter). Copy vision values into the capture-time (bench) buffers and replay: vs vision-eager maxabs 0.093750/mean 0.013783 (capture-noise level), vs bench-eager 3.5625 (the switch genuinely took effect -- same scale as 13a.27's 3.5 inter-adapter sanity). Switch cost **p50 1.452 / p95 2.738ms** -- ~5x cheaper than PEFT's ~8ms `set_adapter` (13a.25), behind vLLM's ~zero (13a.28) but vLLM lost on the metric that matters. Copy-back restoration replays bench-eager within 0.125.
+
+**Step 3 -- correctness.** Live routing re-check on current code (server started, then killed): 77-opt benchcorpus -> HTTP 501 naming adapter+cap, 10-opt -> HTTP 200 -- holds. 5-case probability equivalence (13a.28's cases, restricted-logit read at last REAL position under padding):
+
+| Case | L / bucket | maxabs | meanabs | argmax |
+|---|---|---|---|---|
+| smoke10 | 111 / 128 | 0.000000 | 0.000000 | same |
+| smoke26 | 239 / 256 | 0.004500 | 0.000645 | same |
+| jev0 (5-way) | 78 / 128 | 0.001364 | 0.000546 | same |
+| jev1 (5-way) | 79 / 128 | 0.006247 | 0.002499 | same |
+| jev2 (5-way) | 79 / 128 | 0.000000 | 0.000000 | same |
+
+**Step 4 -- latency (n=25, copy_+replay+sync+logit read vs same-run eager forward):**
+
+| Path | p50 | p95 | min |
+|---|---|---|---|
+| CUDA-graph replay | **41.73ms** | 51.86ms | 28.52ms |
+| Eager, same run | 72.02ms | 93.93ms | 67.01ms |
+
+**Verdict: GO as a ship candidate -- the first lever in this project that moves latency more than noise (-30ms, -42%, first sub-50ms p50).** All three hold: it works (Steps 0-1), it is correct within bf16 noise with argmax agreement everywhere (Steps 2-3), it is actually faster (Step 4). Shipping is still a separate decision, not taken here: open items are bucket-set policy + per-bucket warmup at server start, `copy_`-switch integration with restoration discipline, a full JevBench/jabr-v2 bench gate before merge (same bar as 13a.26), and post-integration E2E measurement (projection from this round: ~42ms forward + ~10ms serving overhead ~= ~52ms E2E -- a projection, not a claim). No sixth lever needed; this was the fifth and it worked.
+
+GPU occupancy: other users' ~12GB constant across every run in this section.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
