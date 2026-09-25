@@ -1467,6 +1467,29 @@ Evidence: this session's stub-based test script, `verify_routing_fix.py` (not co
 
 Live on the L40S against the real checkpoints, the 13a.22 fix holds on both arms -- a 77-option text request with `text_adapter="benchcorpus"` fails loudly (`ChoiceUnsupportedError` naming `'benchcorpus'` and its manifest cap of 26, surfaced as HTTP 501 rather than a silent 200, with the 10-option control returning 200) and the same request with the vision slot holding the `wide` checkpoint succeeds (HTTP 200, `adapter="vision"`), with the honest nuance that the real `vision` checkpoint's own manifest cap is also 26 so it too fails loudly on 77 options exactly as the per-adapter design intends; `causal-conv1d` is closed as uninstallable without root access (the `nvidia-cuda-nvcc-cu12` pip wheel ships no `nvcc` driver so the source build fails with `FileNotFoundError: '/usr/local/cuda/bin/nvcc'`, PyPI is source-only, and upstream's 80 prebuilt wheels top out at torch 2.10 with nothing for this box's torch 2.14.0+cu130/cp313), leaving the measured pre-kernel baseline of **p50 91.1ms / p95 108.7ms over HTTP (n=30, benchcorpus 10-option; wide-slot narrow p50 95.2ms / p95 134.3ms, n=10)** as the standing number; and `serve/inference.py`'s `RoutingDecoderModel` already serializes every forward pass through `self._lock` by documented design (the class docstring's "Concurrency note"), so single-request serving is intended behavior to revisit only if future latency work justifies it.
 
+### 13a.24 Request-lifecycle profile: where the ~90ms p50 goes (2026-09-25, measurement only, no code changed)
+
+Method: `predict_choice`'s text-only body replicated step-for-step in a scratch script (same helpers, same order, same lock; zero repo edits), `time.perf_counter()` checkpoints, `torch.cuda.synchronize()` after the H2D copy and around the forward pass; n=25 measured + 3 warmup excluded per case, 10-option prompt (123 input tokens both cases -- identical input, so bench-vs-wide differ only in adapter weights); replica fidelity checked by choice-agreement plus wall time (benchcorpus replica total 82.8ms vs real `predict_choice` wall 81.6ms; wide 102.9ms vs 100.8ms). HTTP E2E measured separately against the real uvicorn server (n=25 sequential + one 8-concurrent burst). Percentages are per-column shares of that column's replicated total (same contention regime, always self-consistent); stage 1 is derived (E2E minus in-server compute), not directly timed.
+
+| Stage | Benchcorpus p50 | Benchcorpus p95 | % of total | Wide-slot p50 | Wide-slot p95 | % of total |
+|---|---|---|---|---|---|---|
+| 3. `self._lock` wait (uncontended, sequential) | 0.00ms | 0.00ms | 0.0% | 0.00ms | 0.01ms | 0.0% |
+| 4. `set_adapter()` | 8.45ms | 11.91ms | 10.2% | 12.66ms | 26.99ms | 12.3% |
+| 2. Chat-template + processor + H2D (+sync) | 2.17ms | 4.46ms | 2.6% | 3.64ms | 8.46ms | 3.5% |
+| 5. Forward `model(**enc)` (sync both sides) | 69.18ms | 76.76ms | 83.5% | 79.65ms | 148.96ms | 77.4% |
+| 6a. Restricted-logit softmax/argmax | 0.50ms | 7.36ms | 0.6% | 0.73ms | 4.59ms | 0.7% |
+| 6b. Response `json.dumps` | 0.06ms | 0.15ms | 0.1% | 0.07ms | 0.13ms | 0.1% |
+| Replicated in-server total | 82.84ms | 94.07ms | 100% | 102.85ms | 181.06ms | 100% |
+| HTTP E2E (real server, sequential) | 102.44ms | 113.12ms | -- | 86.52ms | 96.59ms | -- |
+| 1. HTTP/FastAPI/dispatch (derived: E2E minus in-server) | ~19.6ms | ~19.1ms | ~19% of E2E | n/a (regimes differed, see below) | n/a | n/a |
+| Burst: 8 concurrent, wall / per-req p50 | 797.7ms / 510.6ms | per-req max 789.5ms | ~7.8x serial | 747.1ms / 446.6ms | per-req max 738.9ms | ~8.6x serial |
+
+GPU state at measurement (stated, not assumed): other users' jobs held a constant ~12GB throughout (8x ~1006MB + one ~3.9GB); our server added 9.7GB when up; 23.7GB free. Run-to-run variance is real on this shared box and is reported, not smoothed: an earlier wide-slot run measured forward 67.3/79.6ms and total 80.9/93.2ms (vs 79.7/149.0ms and 102.9/181.1ms above) under identical ~12GB occupancy, so absolute forward latency moves +-20% with SM timeshare even at constant memory pressure -- which is also why wide's stage 1 is not derived (its E2E ran in a quieter window than its in-process run).
+
+Decision read (no action taken this pass): step 5 dominates in every regime measured (77-84% of in-server time), so quantization remains a valid experiment on the biggest slice -- but `set_adapter()` (10-12%, pure PEFT/Python overhead across 128 LoRA modules) plus HTTP/dispatch (~19% benchcorpus) plus template (~3%) put ~30% of E2E outside anything quantization fixes, and the burst rows confirm fully-serial serving (wall ~= 8x sequential p50, per-request 5x blowup under x8 concurrency). Both levers are real; order is the open decision.
+
+Evidence: scratch scripts `/tmp/ekvachan-task1/profile_stages.py`, `profile_e2e.py` (not committed, same spirit as prior throwaway harnesses); raw per-run JSON printed to those runs' stdout.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
