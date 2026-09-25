@@ -325,6 +325,21 @@ class RoutingDecoderModel:
     frames this file as "the reference implementation used to validate the
     wire contract first", not the target low-latency Rust server), not a
     silent gap.
+
+    **Option-width validation is per-adapter, not global (PRD.md 13a.20/
+    13a.22).** `self.max_options` (588) is the shared code table's ceiling --
+    how many single-token codes exist under this tokenizer at all -- not a
+    promise that every loaded adapter can answer a request that wide.
+    `predict_choice` determines which adapter a request routes to (via
+    `_select_adapter`, same rule as above) *before* checking the option
+    count, and validates against that adapter's own `max_options` (read from
+    its checkpoint's manifest.json at load time, `self._adapter_max_options`)
+    -- exactly the pattern `_build_code_table_for_backend` already enforces
+    for `DecoderMultischemaBackend`/`DecoderVisionMultischemaBackend`. PRD.md
+    13a.20 found the earlier, global-only check let a >26-option request
+    silently reach a checkpoint (e.g. `"benchcorpus"`, manifest cap 26) that
+    was never trained on that width, producing a plausible-looking wrong
+    answer with no error at all.
     """
 
     TEXT_ADAPTER_NAME = "benchcorpus"
@@ -356,7 +371,30 @@ class RoutingDecoderModel:
             )
         text_manifest = json.loads(text_manifest_path.read_text())
         self.base_model_name = text_manifest["base_model"]
+        # This is the CODE TABLE's ceiling (how many single-token codes exist
+        # under this tokenizer at all, PRD.md 13a.17) -- not a per-request
+        # validation bound. It sizes self.letters/self._letter_ids below and
+        # backs serve/server.py's own coarse pre-filter. The bound that
+        # actually matters for "will this request be answered correctly" is
+        # per-adapter (self._adapter_max_options below, PRD.md 13a.20/13a.22)
+        # -- a checkpoint's own manifest.json max_options is always narrower
+        # than or equal to this, never wider (_build_code_table_for_backend
+        # asserts that below).
         self.max_options = DECODER_MULTISCHEMA_MAX_OPTIONS
+        # Per-adapter option-width ceiling, read from each adapter's OWN
+        # checkpoint manifest -- PRD.md 13a.20 found that validating against
+        # the global self.max_options above instead of this let a >26-option
+        # request routed to "benchcorpus" (cap 26) be silently served by a
+        # checkpoint never trained on that width. Same pattern
+        # `_build_code_table_for_backend`'s callers already use
+        # (DecoderMultischemaBackend/DecoderVisionMultischemaBackend read
+        # their own single checkpoint's manifest max_options); this class
+        # just needs one such cap per loaded adapter instead of one overall.
+        self._adapter_max_options = {
+            self.TEXT_ADAPTER_NAME: int(
+                text_manifest.get("max_options", DECODER_MULTISCHEMA_MAX_OPTIONS)
+            ),
+        }
 
         # Raw (uncalibrated) by default -- PRD.md 13a.2/13a.5/13a.9 all found
         # temperature scaling makes this architecture's ECE/Brier worse, not
@@ -384,9 +422,13 @@ class RoutingDecoderModel:
 
         self.vision_available = False
         if load_vision and (vision_checkpoint_dir / "manifest.json").exists():
+            vision_manifest = json.loads((vision_checkpoint_dir / "manifest.json").read_text())
             vision_adapter_dir = _ensure_vlclass_adapter_dir(vision_checkpoint_dir)
             self.model.load_adapter(str(vision_adapter_dir), adapter_name=self.VISION_ADAPTER_NAME)
             self._loaded_adapters.add(self.VISION_ADAPTER_NAME)
+            self._adapter_max_options[self.VISION_ADAPTER_NAME] = int(
+                vision_manifest.get("max_options", DECODER_MULTISCHEMA_MAX_OPTIONS)
+            )
             self.vision_available = True
 
         self.model.set_adapter(self.TEXT_ADAPTER_NAME)
@@ -419,7 +461,16 @@ class RoutingDecoderModel:
             "vision_available": self.vision_available,
             "text_adapter_choice": self.text_adapter_choice,
             "text_adapter_choice_is_configured": self.text_adapter_choice in self._loaded_adapters,
+            # `max_options` is the shared code table's ceiling (letters this
+            # tokenizer can render as single-token codes at all, PRD.md
+            # 13a.17) -- NOT a promise that every loaded adapter answers a
+            # request that wide. `max_options_by_adapter` is the real,
+            # per-adapter cap (each adapter's own checkpoint manifest.json),
+            # which is what `_select_adapter` + the width check in
+            # `predict_choice` actually enforce per request (PRD.md 13a.20/
+            # 13a.22).
             "max_options": self.max_options,
+            "max_options_by_adapter": dict(self._adapter_max_options),
             "n_lora_modules": self._n_lora_modules,
             "device": self.device,
         }
@@ -499,13 +550,33 @@ class RoutingDecoderModel:
         image_b64: str | None = None,
     ) -> dict:
         n = len(options)
-        if not (2 <= n <= self.max_options):
-            raise ChoiceUnsupportedError(
-                f"this checkpoint supports 2-{self.max_options} options (PRD.md 13a.5's real "
-                f"ceiling for the single-uppercase-letter restricted-logit mechanism), got {n}."
-            )
         torch = self._torch
         image = self._decode_image(image_b64) if image_b64 is not None else None
+
+        # Which adapter answers this request is decided by `_select_adapter`
+        # (image-bearing -> "vision", text-only -> `self.text_adapter_choice`)
+        # -- and that decision, not the shared 588-wide code table, is what
+        # bounds how many options this SPECIFIC request can have (PRD.md
+        # 13a.20/13a.22): `_select_adapter` itself has no side effects, so
+        # it's safe to call here, before the lock, purely to learn which
+        # adapter's own cap to validate against.
+        adapter_name = self._select_adapter(image is not None)
+        adapter_max_options = self._adapter_max_options[adapter_name]
+        if not (2 <= n <= adapter_max_options):
+            routed_because = (
+                "it carries an image, which always routes to the vision adapter"
+                if image is not None
+                else f"text_adapter_choice={self.text_adapter_choice!r}"
+            )
+            raise ChoiceUnsupportedError(
+                f"this request has {n} options, but it would be routed to the {adapter_name!r} adapter "
+                f"({routed_because}), whose own checkpoint manifest.json caps it at "
+                f"max_options={adapter_max_options} (PRD.md 13a.20/13a.22 -- validating against the "
+                f"shared {self.max_options}-wide code table instead of the routed adapter's own cap is "
+                "exactly the gap that silently mis-served real requests before this check existed). "
+                "Reduce the option count, or route this request to an adapter whose manifest supports "
+                f"it (loaded adapters and their caps: {dict(sorted(self._adapter_max_options.items()))})."
+            )
 
         prompt_text = _build_multischema_prompt(state, options, self.letters, instructions)
         # `_prompt_content` only checks "is this argument None", matching its
@@ -517,7 +588,6 @@ class RoutingDecoderModel:
         messages = [{"role": "user", "content": content}]
 
         with self._lock:
-            adapter_name = self._select_adapter(image is not None)
             self.model.set_adapter(adapter_name)
 
             prompt = self.processor.apply_chat_template(
