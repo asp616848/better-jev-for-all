@@ -1463,6 +1463,10 @@ All 8 assertions in this test passed (`python3 -m py_compile serve/inference.py`
 
 Evidence: this session's stub-based test script, `verify_routing_fix.py` (not committed to this repo -- a throwaway harness in this session's own scratchpad, same spirit as 13a.18's uncommitted `serve_eval_wide.py`), full pass/fail output reproduced in this section rather than summarized away.
 
+### 13a.23 Live GPU verification of the 13a.22 fix, causal-conv1d close-out, and serving-latency baseline (2026-09-25)
+
+Live on the L40S against the real checkpoints, the 13a.22 fix holds on both arms -- a 77-option text request with `text_adapter="benchcorpus"` fails loudly (`ChoiceUnsupportedError` naming `'benchcorpus'` and its manifest cap of 26, surfaced as HTTP 501 rather than a silent 200, with the 10-option control returning 200) and the same request with the vision slot holding the `wide` checkpoint succeeds (HTTP 200, `adapter="vision"`), with the honest nuance that the real `vision` checkpoint's own manifest cap is also 26 so it too fails loudly on 77 options exactly as the per-adapter design intends; `causal-conv1d` is closed as uninstallable without root access (the `nvidia-cuda-nvcc-cu12` pip wheel ships no `nvcc` driver so the source build fails with `FileNotFoundError: '/usr/local/cuda/bin/nvcc'`, PyPI is source-only, and upstream's 80 prebuilt wheels top out at torch 2.10 with nothing for this box's torch 2.14.0+cu130/cp313), leaving the measured pre-kernel baseline of **p50 91.1ms / p95 108.7ms over HTTP (n=30, benchcorpus 10-option; wide-slot narrow p50 95.2ms / p95 134.3ms, n=10)** as the standing number; and `serve/inference.py`'s `RoutingDecoderModel` already serializes every forward pass through `self._lock` by documented design (the class docstring's "Concurrency note"), so single-request serving is intended behavior to revisit only if future latency work justifies it.
+
 ## 14. Open questions
 
 Resolved by the project owner on 2026-09-22:
