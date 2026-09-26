@@ -237,6 +237,13 @@ def main():
     model.print_trainable_parameters()
     lora_mods = assert_vision_tower_frozen(model)
     print(f"vision-tower-freeze assertion passed: {len(lora_mods)} LoRA modules, none in model.visual")
+    # Real, measured param counts rather than trusting --base-model's name/card --
+    # the one thing that actually verifies "this is a 0.5B/4B/etc. run" (see this
+    # project's own "verify, don't assume" rule). Cheap: model is already loaded.
+    n_params_total = sum(p.numel() for p in model.parameters())
+    n_params_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"measured param count: {n_params_total:,} total, {n_params_trainable:,} trainable "
+          f"({100 * n_params_trainable / n_params_total:.2f}%)")
 
     train_collate = make_collate(processor, max_length, letter_ids, train=True, truncate=args.truncate)
     eval_collate = make_collate(processor, max_length, letter_ids, train=False, truncate=args.truncate)
@@ -329,6 +336,9 @@ def main():
 
     manifest = {
         "base_model": args.base_model,
+        "data_dir": str(data_dir),
+        "n_params_total": n_params_total,
+        "n_params_trainable": n_params_trainable,
         "architecture": "decoder-lora-restricted-logit-general",
         "script": "training/train_decoder_lora_general.py",
         "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
