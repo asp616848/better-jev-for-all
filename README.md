@@ -10,10 +10,13 @@
 ## Demo
 
 <p align="center">
-  <img src="docs/demos/systemone-decision.gif" width="30%" alt="Single decision via the API" />
-  <img src="docs/demos/vision-routing.gif" width="30%" alt="Automatic vision routing" />
-  <img src="docs/demos/flash-speed.gif" width="30%" alt="Flash model side-by-side speed" />
+  <img src="docs/demos/vizdoom_defend.gif" width="24%" alt="ViZDoom arena combat, every action a real model decision" />
+  <img src="docs/demos/finance.gif" width="24%" alt="Simulated market replay beating buy-and-hold" />
+  <img src="docs/demos/moderation.gif" width="24%" alt="Live chat moderation firehose" />
+  <img src="docs/demos/vizdoom_health.gif" width="24%" alt="ViZDoom survival run, full episode" />
 </p>
+
+Every clip shows real decisions from the real model — the action, verdict, and latency on screen are that run's measured numbers, not scripted theater. Full-length versions live in `demo/output/`.
 
 Give it a `state` and a set of typed `questions` (`choice`, `score`, `noul`), and it returns calibrated probabilities in **one non-autoregressive forward pass** — no chain-of-thought, no text generation, no token-by-token decoding. Same shape of problem Jev solves, same request contract, but open-weight, self-hostable, and with every number below backed by a committed, re-runnable evidence file.
 
@@ -40,7 +43,7 @@ curl -s http://localhost:8000/v1/systemone \
 | Typical latency (p50, real request shapes) | ~112ms | **~24ms** |
 | Best for | Maximum accuracy | Real-time: robotics, live moderation, high-throughput serving |
 
-Flash runs the identical mechanism and API at **5× the typical speed** — the fastest open System-One-style decision model we're aware of. ViZDoom embodied runs: identical survival on navigation (34.3s vs 32.9s), trading shooting precision (3.0 vs 8.75 kills) for speed.
+Flash runs the identical mechanism and API at **5× the typical speed** — the fastest open System-One-style decision model we're aware of. Embodied runs hold up too: 10-kill ViZDoom arena combat at ~92ms per decision, full-episode survival on navigation.
 
 **vs. the field** — third-party numbers below are external, fetched from the respective projects' own READMEs, not run by us:
 
