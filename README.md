@@ -50,7 +50,7 @@ Flash runs the identical mechanism and API at **5× the typical speed** — the 
 | Benchmark | ekVachan | ekVachan-flash | Von | Jev |
 |---|---|---|---|---|
 | JevBench accuracy | **70.99%** | 56.71% | 59.3%¹ | — |
-| jabr-v2 accuracy | **85.49%** | 67.37% | 72.0% (macro, v1.1) | 96.6% (macro) |
+| jabr-v2 accuracy | **85.49%** | 67.37% | 72.0% (macro, v1.1) | - |
 | Typical latency (p50) | ~112ms | **~24ms** | <18ms | ~16ms |
 
 ¹ Von 1.2's README reports per-difficulty-tier only (easy 100.0%/48, standard 63.9%/72, hard 38.7%/111 — no published overall figure); 59.3% is a case-count-weighted aggregate derived from those tiers, not Von's own claim.
