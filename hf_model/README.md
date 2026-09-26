@@ -27,6 +27,10 @@ Full source, training pipeline, and evidence trail:
 (`README.md` for the summary, `PRD.md` for every measured number and how it
 was produced).
 
+Need speed over accuracy? Try the 0.8B sibling —
+[abhi6168/ekvachan-decoder-flash](https://huggingface.co/abhi6168/ekvachan-decoder-flash):
+same API, ~24ms typical latency, trained through the same curriculum.
+
 ## What's in this repo
 
 Two named LoRA adapters over the same base model, hot-swapped at serving time
