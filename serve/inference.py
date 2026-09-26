@@ -1003,7 +1003,9 @@ class RoutingDecoderModel:
         }
 
 
-def load_default_router(text_adapter: str | None = None) -> RoutingDecoderModel:
+def load_default_router(
+    text_adapter: str | None = None, checkpoints_dir: Path | None = None
+) -> RoutingDecoderModel:
     """Constructs the routing layer described in `RoutingDecoderModel`'s own
     docstring: one base model, hot-swappable named LoRA adapters. Loads the
     vision adapter automatically if `checkpoints/ekvachan-decoder-qwen-vision`
@@ -1011,8 +1013,21 @@ def load_default_router(text_adapter: str | None = None) -> RoutingDecoderModel:
     raising a clear `ChoiceUnsupportedError` until that checkpoint lands.
     `text_adapter`, if given, overrides `EKVACHAN_TEXT_ADAPTER` -- used by
     this repo's own validation scripts to exercise the known-stable
-    `"benchcorpus"` adapter without touching the shipped (unset) default."""
-    return RoutingDecoderModel(text_adapter=text_adapter)
+    `"benchcorpus"` adapter without touching the shipped (unset) default.
+
+    `checkpoints_dir`, if given, overrides `EKVACHAN_CHECKPOINTS_DIR` (which
+    itself falls back to `RoutingDecoderModel`'s own default,
+    `REPO_ROOT/"checkpoints"`, when neither is set). Added so a second model
+    lineage -- e.g. a smaller base-model size trained into a sibling
+    directory with the same two subfolder names (`TEXT_CHECKPOINT_NAME`/
+    `VISION_CHECKPOINT_NAME`) -- can be served and benchmarked side by side
+    with the production checkpoints without touching this function's
+    zero-argument call sites (`serve/server.py`'s included) or risking any
+    collision with what they already serve."""
+    if checkpoints_dir is None:
+        env_dir = os.environ.get("EKVACHAN_CHECKPOINTS_DIR")
+        checkpoints_dir = Path(env_dir) if env_dir else None
+    return RoutingDecoderModel(checkpoints_dir=checkpoints_dir, text_adapter=text_adapter)
 
 
 if __name__ == "__main__":
