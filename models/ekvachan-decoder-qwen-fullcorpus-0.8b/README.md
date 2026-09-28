@@ -108,6 +108,69 @@ aggregate `eval_ood` figure of 86.65% over n=2,996 is the load-bearing number.
 `go_emotions` (66.20% `eval_ood`, 28-way) and `cfpb_complaints` (84.18%, 10-way) remain
 the weak points, consistent with the confusion analysis in PRD.md 13a.8.
 
+## `bjb evaluate` — the headline per-source numbers
+
+The properly-powered measurement. Served over HTTP against the real endpoint
+(`fullcorpus-08b@full`), 25,233 items attempted, **25,233 answered, 0 out-of-schema,
+0 declined** (coverage 1.0), 884.9 s. Evidence bundle:
+[`better-jev-bench`](https://github.com/asp616848/better-jev-bench) →
+`results_fullcorpus_08b/run_571d107c43724a4e9358/`.
+
+| Task | Accuracy | n | Chance |
+|---|---|---|---|
+| `clinc150/intent` | **97.05%** | 2,000 | 0.66% |
+| `cuad/clause_present` | **95.85%** | 2,000 | 50.0% |
+| `civil_comments/is_toxic` | 95.35% | 2,000 | 92.1% |
+| `massive/scenario` | **92.65%** | 2,000 | — |
+| `banking77/intent` | **90.50%** | 2,000 | 1.30% |
+| `os_atlas/target_element` | **88.25%** | 2,000 | — |
+| `massive/intent` | **88.20%** | 2,000 | — |
+| `cfpb_complaints/product` | **87.10%** | 2,000 | 54.1% |
+| `cuad/clause_type` | **85.09%** | 1,174 | 2.44% |
+| `ledgar/provision_type` | **82.45%** | 2,000 | 1.00% |
+| `civil_comments/toxicity_level` | 81.25% | 2,000 | 79.3% |
+| `go_emotions/emotion` | 61.95% | 2,000 | 35.3% |
+| `screenspot_v2/target_element` | 55.83% | 858 | — |
+| `atari_head/action` | 11.57% | 1,201 | 5.56% |
+
+Axes: intelligence 64.37, calibration 89.45, generality 63.88, speed 76.36,
+speed_multimodal 85.78, `score_no_cost` 72.80.
+
+Two caveats the run's own manifest states, carried forward rather than dropped:
+it marks itself **`provisional: true`**, and it flags that **finance is 1 of 11
+scored datasets carrying 25% of Intelligence** (PRD §14.1) — so the aggregate is
+domain-concentrated, not a balanced 11-domain mean.
+
+### Where the two evaluations disagree, and why that matters
+
+The `bjb evaluate` table and the training-time `eval_ood` table above measure
+overlapping tasks with very different n, and **they disagree in both directions**:
+
+| Task | `bjb evaluate` (n≈2,000) | training `eval_ood` (n=64–373) | Direction |
+|---|---|---|---|
+| `clinc150/intent` | 97.05% | 94.18% | bjb higher |
+| `banking77/intent` | 90.50% | 85.44% | bjb higher |
+| `cfpb_complaints/product` | 87.10% | 84.18% | bjb higher |
+| `ledgar/provision_type` | 82.45% | 81.30% | bjb higher |
+| `massive/intent` | 88.20% | 90.84% | bjb **lower** |
+| `cuad/clause_type` | 85.09% | 89.06% | bjb **lower** |
+| `os_atlas/target_element` | 88.25% | 97.81% | bjb much **lower** |
+| `atari_head/action` | 11.57% | 100.00% | bjb **88× lower** |
+
+The first four are explainable: this run trained on all 316,156 public rows, so
+`bjb evaluate` over the public corpus is largely in-distribution and reads higher.
+
+**The last row is not explainable that way, and it is the most important line in
+this document.** `atari_head/action` scores 100.00% on the training-time held-out
+slice (n=85) and 11.57% on `bjb evaluate` (n=1,201, chance 5.56%) — a gap far too
+large to be sampling noise on either side. A 100% held-out score on a task the real
+evaluation puts barely above chance indicates the training-time slice is not
+measuring the same task the benchmark measures, or that those eval rows are near
+duplicates of training rows. Until that is diagnosed, **the training-time per-source
+tables should not be quoted as generalization evidence for the image-bearing
+tasks** — `atari_head` and `screenspot_v2` (55.83%) are exactly the multimodal
+claims, and they are the weakest measured numbers in the whole table.
+
 ## Real third-party benchmarks
 
 Run against the actual production serving object (`--backend routing-decoder`), not a

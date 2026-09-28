@@ -59,7 +59,9 @@ Latency is measured end-to-end on real JevBench-shaped requests through the prod
 
 ### In development: full-corpus 0.8B (metadata only, not released)
 
-A third checkpoint — [`ekvachan-decoder-qwen-fullcorpus-0.8b`](models/ekvachan-decoder-qwen-fullcorpus-0.8b/) — trained on all 316,156 public rows for one epoch. **Its weights are not published and are not in this repository**; the `models/` entry carries the manifest, adapter config, and measured results only. It does **not** beat the released flash model: 53.68% on JevBench and 65.25% on jabr-v2, versus 56.71% and 67.37% for `ekvachan-decoder-flash`. Recorded because a negative result is still a result.
+A third checkpoint — [`ekvachan-decoder-qwen-fullcorpus-0.8b`](models/ekvachan-decoder-qwen-fullcorpus-0.8b/) — trained on all 316,156 public rows for one epoch, then measured over 25,233 items with full coverage (25,233 answered, 0 declined, 0 out-of-schema): CLINC150 97.05%, CUAD 95.85/85.09%, MASSIVE 92.65/88.20%, banking77 90.50%, OS-Atlas 88.25%, CFPB 87.10%, LEDGAR 82.45% — against go_emotions 61.95%, ScreenSpot-v2 55.83% and Atari-HEAD 11.57%, which is where it is weak.
+
+**Its weights are not published and are not in this repository**; the `models/` entry carries the manifest, adapter config, and measured results only. It also does **not** beat the released flash model on the third-party benchmarks — 53.68% on JevBench and 65.25% on jabr-v2, versus 56.71% and 67.37% for `ekvachan-decoder-flash`. Recorded because a negative result is still a result.
 
 ## Architecture, in short
 
