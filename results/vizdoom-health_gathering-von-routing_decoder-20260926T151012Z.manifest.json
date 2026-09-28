@@ -1,0 +1,170 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-health_gathering-von-routing_decoder-20260926T151012Z",
+  "timestamp_utc": "2026-09-26T15:10:12Z",
+  "seed": 0,
+  "harness_git_commit": "372bfea1591db24ef927f55d50a688382a016b6b",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/health_gathering.cfg (stock, ships in the wheel)",
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "von",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "move forward",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "Acid survival navigation rules: 1. If a medkit is located dead center or straight ahead, select move forward. 2. If a medkit is located on the left side of the screen, select turn left. 3. If a medkit is located on the right side of the screen, select turn right. 4. If facing a wall right in front or no medkits visible, select turn right to explore open space.\nmove forward: A medkit is straight ahead, or wide open space ahead with no obstacle in front; advance forward.\nturn left: A medkit is visible on the left side; rotate left toward it.\nturn right: A medkit is visible on the right side, or facing a wall obstacle ahead; rotate right toward open room."
+  },
+  "model": {
+    "instantiated": true,
+    "base_model": "Qwen/Qwen3.5-0.8B",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "loaded_adapters": [
+      "benchcorpus",
+      "vision"
+    ],
+    "vision_available": true,
+    "text_adapter_choice": "vision",
+    "text_adapter_choice_is_configured": true,
+    "max_options": 588,
+    "max_options_by_adapter": {
+      "benchcorpus": 588,
+      "vision": 588
+    },
+    "n_lora_modules": 96,
+    "device": "cuda",
+    "cuda_graphs_enabled": false,
+    "cuda_graphs_buckets_captured": [],
+    "backend": "routing_decoder"
+  },
+  "results": {
+    "scenario": "health_gathering",
+    "rubric": "von",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "n_decisions": 2400,
+    "n_out_of_schema": 0,
+    "survival_s_by_episode": [
+      {
+        "seed": 41006394,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 62.2718995437026,
+        "latency_ms_p95": 79.6767023857683
+      },
+      {
+        "seed": 41006395,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 63.479384407401085,
+        "latency_ms_p95": 81.44714911468327
+      },
+      {
+        "seed": 41006396,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 65.27964770793915,
+        "latency_ms_p95": 96.24746683984998
+      },
+      {
+        "seed": 41006397,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 65.4942118562758,
+        "latency_ms_p95": 88.7531022541225
+      },
+      {
+        "seed": 41006398,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 66.23762147501111,
+        "latency_ms_p95": 84.08326683565974
+      },
+      {
+        "seed": 41006399,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 66.65475433692336,
+        "latency_ms_p95": 93.27556220814587
+      },
+      {
+        "seed": 41006400,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 64.54546982422471,
+        "latency_ms_p95": 84.88600277341904
+      },
+      {
+        "seed": 41006401,
+        "episode_index": 0,
+        "steps": 300,
+        "survival_s": 34.285714285714285,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 66.12955732271075,
+        "latency_ms_p95": 103.0715171713382
+      }
+    ],
+    "survival_s_aggregate": {
+      "mean": 34.285714285714285,
+      "sd": 0.0,
+      "min": 34.285714285714285,
+      "max": 34.285714285714285,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 2400,
+      "accuracy": 0.4633333333333333,
+      "brier": 0.5474042328803521,
+      "ece": 0.18843318363030753,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-health_gathering-von-routing_decoder-20260926T151012Z.raw",
+  "episodic": true
+}

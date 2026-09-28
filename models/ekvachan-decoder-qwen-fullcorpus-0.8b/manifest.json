@@ -1,0 +1,230 @@
+{
+  "base_model": "Qwen/Qwen3.5-0.8B",
+  "data_dir": "data/processed/fullcorpus_08b",
+  "n_params_total": 859375680,
+  "n_params_trainable": 6389760,
+  "architecture": "decoder-lora-restricted-logit-general",
+  "script": "training/train_decoder_lora_general.py",
+  "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+  "vision_rows_detected": true,
+  "max_options": 588,
+  "max_length": 1024,
+  "max_pixels": 200704,
+  "truncate": false,
+  "min_free_vram_gb": 24,
+  "seed": 42,
+  "epochs": 1,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "n_lora_modules": 96,
+  "train_size": 316156,
+  "calib_size": 750,
+  "eval_id_test_size": 1751,
+  "eval_ood_size": 2996,
+  "temperature": 0.9406924086511893,
+  "temperature_fit_on": "eval_id calib slice only (not eval_ood)",
+  "eval_id_raw_report": {
+    "n": 1751,
+    "accuracy": 0.8709308966304968,
+    "brier": 0.18561579287052155,
+    "ece": 0.03611643538347046
+  },
+  "eval_id_calibrated_report": {
+    "n": 1751,
+    "accuracy": 0.8709308966304968,
+    "brier": 0.18422938883304596,
+    "ece": 0.025709902777255163
+  },
+  "eval_id_raw_by_source": {
+    "bjb:atari_head/action": {
+      "n": 46,
+      "accuracy": 1.0,
+      "brier": 0.0006779101095162332,
+      "ece": 0.020874860494033153
+    },
+    "bjb:banking77/intent": {
+      "n": 64,
+      "accuracy": 0.96875,
+      "brier": 0.07510432600975037,
+      "ece": 0.07326400745660067
+    },
+    "bjb:cfpb_complaints/product": {
+      "n": 209,
+      "accuracy": 0.8325358851674641,
+      "brier": 0.24372966587543488,
+      "ece": 0.0883848879611093
+    },
+    "bjb:civil_comments/is_toxic": {
+      "n": 220,
+      "accuracy": 0.9636363636363636,
+      "brier": 0.05367423966526985,
+      "ece": 0.021809557351199067
+    },
+    "bjb:civil_comments/toxicity_level": {
+      "n": 221,
+      "accuracy": 0.8235294117647058,
+      "brier": 0.24363304674625397,
+      "ece": 0.05801472539815429
+    },
+    "bjb:clinc150/intent": {
+      "n": 120,
+      "accuracy": 0.9916666666666667,
+      "brier": 0.017598945647478104,
+      "ece": 0.021758906046549484
+    },
+    "bjb:cuad/clause_present": {
+      "n": 68,
+      "accuracy": 0.9705882352941176,
+      "brier": 0.03028562106192112,
+      "ece": 0.042134476058623374
+    },
+    "bjb:cuad/clause_type": {
+      "n": 39,
+      "accuracy": 0.9230769230769231,
+      "brier": 0.18880265951156616,
+      "ece": 0.1831357295696552
+    },
+    "bjb:go_emotions/emotion": {
+      "n": 209,
+      "accuracy": 0.6076555023923444,
+      "brier": 0.5148476958274841,
+      "ece": 0.1127872542616283
+    },
+    "bjb:ledgar/provision_type": {
+      "n": 219,
+      "accuracy": 0.8447488584474886,
+      "brier": 0.24205923080444336,
+      "ece": 0.06082616168070057
+    },
+    "bjb:massive/intent": {
+      "n": 78,
+      "accuracy": 0.8717948717948718,
+      "brier": 0.18679219484329224,
+      "ece": 0.05928174196145472
+    },
+    "bjb:massive/scenario": {
+      "n": 77,
+      "accuracy": 0.922077922077922,
+      "brier": 0.10527355968952179,
+      "ece": 0.0816021453250538
+    },
+    "bjb:os_atlas/target_element": {
+      "n": 181,
+      "accuracy": 0.9779005524861878,
+      "brier": 0.04839800298213959,
+      "ece": 0.05706608031994729
+    }
+  },
+  "eval_id_raw_by_question_type": {
+    "choice": {
+      "n": 1242,
+      "accuracy": 0.857487922705314,
+      "brier": 0.20716790854930878,
+      "ece": 0.040657451403313775
+    },
+    "noul": {
+      "n": 288,
+      "accuracy": 0.9652777777777778,
+      "brier": 0.04815192520618439,
+      "ece": 0.021045572641823027
+    },
+    "score": {
+      "n": 221,
+      "accuracy": 0.8235294117647058,
+      "brier": 0.24363304674625397,
+      "ece": 0.05801472539815429
+    }
+  },
+  "eval_ood_raw_report": {
+    "n": 2996,
+    "accuracy": 0.8664886515353805,
+    "brier": 0.196009561419487,
+    "ece": 0.03304167410162325
+  },
+  "eval_ood_raw_by_source": {
+    "bjb:atari_head/action": {
+      "n": 85,
+      "accuracy": 1.0,
+      "brier": 0.0007738721906207502,
+      "ece": 0.022005054529975438
+    },
+    "bjb:banking77/intent": {
+      "n": 103,
+      "accuracy": 0.8543689320388349,
+      "brier": 0.20616592466831207,
+      "ece": 0.05419826970517055
+    },
+    "bjb:cfpb_complaints/product": {
+      "n": 373,
+      "accuracy": 0.8418230563002681,
+      "brier": 0.24409429728984833,
+      "ece": 0.06004406124273509
+    },
+    "bjb:civil_comments/is_toxic": {
+      "n": 373,
+      "accuracy": 0.9490616621983914,
+      "brier": 0.07302425801753998,
+      "ece": 0.027303400052456683
+    },
+    "bjb:civil_comments/toxicity_level": {
+      "n": 373,
+      "accuracy": 0.806970509383378,
+      "brier": 0.2494623363018036,
+      "ece": 0.05738654772653657
+    },
+    "bjb:clinc150/intent": {
+      "n": 189,
+      "accuracy": 0.9417989417989417,
+      "brier": 0.09599020332098007,
+      "ece": 0.039193082738805694
+    },
+    "bjb:cuad/clause_present": {
+      "n": 128,
+      "accuracy": 0.96875,
+      "brier": 0.04626643285155296,
+      "ece": 0.03745240904390812
+    },
+    "bjb:cuad/clause_type": {
+      "n": 64,
+      "accuracy": 0.890625,
+      "brier": 0.17091450095176697,
+      "ece": 0.10799380205571651
+    },
+    "bjb:go_emotions/emotion": {
+      "n": 358,
+      "accuracy": 0.6620111731843575,
+      "brier": 0.47825372219085693,
+      "ece": 0.09823270308571819
+    },
+    "bjb:ledgar/provision_type": {
+      "n": 369,
+      "accuracy": 0.8130081300813008,
+      "brier": 0.27320775389671326,
+      "ece": 0.032365627162824796
+    },
+    "bjb:massive/intent": {
+      "n": 131,
+      "accuracy": 0.9083969465648855,
+      "brier": 0.1590609848499298,
+      "ece": 0.09521067005987385
+    },
+    "bjb:massive/scenario": {
+      "n": 131,
+      "accuracy": 0.9694656488549618,
+      "brier": 0.06017029657959938,
+      "ece": 0.05388842557222788
+    },
+    "bjb:os_atlas/target_element": {
+      "n": 319,
+      "accuracy": 0.9780564263322884,
+      "brier": 0.059117600321769714,
+      "ece": 0.06639653612453733
+    }
+  },
+  "eval_ood_note": "CLINC150 wide zero-shot-schema choice eval -- regression check: does this data mix hurt choice generalization relative to the prior lineage's own numbers?",
+  "run_note": "full-corpus 0.8B: 316156 train rows (all public, 1024 cap), fresh LoRA, 1 epoch, batch2x32 for wide-row OOM headroom",
+  "init_adapter": null,
+  "skipped_oom_batches": 0,
+  "timestamp_utc": "2026-09-28T00:57:25Z",
+  "total_train_seconds": 51829.03404259682
+}

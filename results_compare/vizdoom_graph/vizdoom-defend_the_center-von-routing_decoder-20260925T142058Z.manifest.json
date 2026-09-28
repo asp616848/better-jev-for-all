@@ -1,0 +1,173 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-defend_the_center-von-routing_decoder-20260925T142058Z",
+  "timestamp_utc": "2026-09-25T14:20:58Z",
+  "seed": 0,
+  "harness_git_commit": "717cc35b6608b2d5d0a6665f17838f089360e057",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/defend_the_center.cfg (stock, ships in the wheel)",
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "von",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "attack",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "Arena combat decision rule: 1. If an enemy is visible dead center in the crosshair, select attack. 2. If an enemy is visible on the left side of the screen, select turn left. 3. If an enemy is visible on the right side of the screen, select turn right. 4. If no enemies are visible in field of view, select turn left to sweep the arena.\nattack: An enemy is visible dead center on the crosshair. Fire weapon immediately.\nturn left: Target is on the left side, or no active enemies are visible in view; rotate view left to search.\nturn right: Target is visible on the right side of the view; rotate view right to center target."
+  },
+  "model": {
+    "instantiated": true,
+    "base_model": "Qwen/Qwen3.5-4B",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "loaded_adapters": [
+      "benchcorpus",
+      "vision"
+    ],
+    "vision_available": true,
+    "text_adapter_choice": "vision",
+    "text_adapter_choice_is_configured": true,
+    "max_options": 26,
+    "max_options_by_adapter": {
+      "benchcorpus": 26,
+      "vision": 26
+    },
+    "n_lora_modules": 128,
+    "device": "cuda",
+    "cuda_graphs_enabled": true,
+    "cuda_graphs_buckets_captured": [
+      256,
+      512
+    ],
+    "backend": "routing_decoder"
+  },
+  "results": {
+    "scenario": "defend_the_center",
+    "rubric": "von",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      42106076,
+      42106077,
+      42106078,
+      42106079,
+      42106080,
+      42106081,
+      42106082,
+      42106083
+    ],
+    "n_decisions": 1281,
+    "n_out_of_schema": 0,
+    "kills_by_episode": [
+      {
+        "seed": 42106076,
+        "episode_index": 0,
+        "steps": 178,
+        "kills": 9.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 57.822112925350666,
+        "latency_ms_p95": 81.87576346099377
+      },
+      {
+        "seed": 42106077,
+        "episode_index": 0,
+        "steps": 178,
+        "kills": 8.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.08238561823964,
+        "latency_ms_p95": 87.74989270605147
+      },
+      {
+        "seed": 42106078,
+        "episode_index": 0,
+        "steps": 151,
+        "kills": 9.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.22919698059559,
+        "latency_ms_p95": 96.76630795001984
+      },
+      {
+        "seed": 42106079,
+        "episode_index": 0,
+        "steps": 185,
+        "kills": 9.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 106.97983298450708,
+        "latency_ms_p95": 157.40244910120958
+      },
+      {
+        "seed": 42106080,
+        "episode_index": 0,
+        "steps": 166,
+        "kills": 10.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 113.87400096282363,
+        "latency_ms_p95": 160.26631323620677
+      },
+      {
+        "seed": 42106081,
+        "episode_index": 0,
+        "steps": 166,
+        "kills": 8.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 112.04172391444445,
+        "latency_ms_p95": 161.16315824910998
+      },
+      {
+        "seed": 42106082,
+        "episode_index": 0,
+        "steps": 142,
+        "kills": 7.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 77.60769221931696,
+        "latency_ms_p95": 158.97562000900507
+      },
+      {
+        "seed": 42106083,
+        "episode_index": 0,
+        "steps": 115,
+        "kills": 5.0,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 55.63942342996597,
+        "latency_ms_p95": 69.56542897969484
+      }
+    ],
+    "kills_aggregate": {
+      "mean": 8.125,
+      "sd": 1.4523687548277813,
+      "min": 5.0,
+      "max": 10.0,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 1281,
+      "accuracy": 0.7205308352849337,
+      "brier": 0.3149850359242928,
+      "ece": 0.11267764174221642,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-defend_the_center-von-routing_decoder-20260925T142058Z.raw",
+  "episodic": true
+}

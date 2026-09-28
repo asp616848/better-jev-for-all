@@ -1,0 +1,61 @@
+{
+  "benchmark": "jabr_v2",
+  "run_id": "jabr_v2-routing_decoder-20260926T150510Z",
+  "timestamp_utc": "2026-09-26T15:05:10Z",
+  "seed": 0,
+  "harness_git_commit": "372bfea1591db24ef927f55d50a688382a016b6b",
+  "dataset": {
+    "source_repo": "https://github.com/jabr/classifier-benchmark",
+    "license": "CC0 1.0 Universal (public domain) -- verified by reading LICENSE at the repo root 2026-09-22; GitHub's API license-detector mislabels it 'other' because of a short prose preamble before the standard CC0 legal text.",
+    "vendored_files": [
+      "v1.toml",
+      "v2.toml"
+    ],
+    "n_items": 944,
+    "suites": {
+      "v1": "8 tasks / 78 cases, upstream-locked (cases/hashes.json)",
+      "v2": "49 tasks / 866 cases as actually vendored 2026-09-22 -- 3 fewer than the 869 the repo's own README/results/v1v2-summary.md report, because v2.toml is upstream 'under review' / unlocked (no hash pin yet) and has apparently drifted since that summary was generated: commit_intent has 15 cases here vs 16 published, grammar_issue 21 vs 22, fair_housing_violation 18 vs 19. See benchmarks/jabr_v2/README.md."
+    },
+    "correction": "PRD.md Section 8.1 was written assuming jabr-v2 had no confirmed public repo. It does: github.com/jabr/classifier-benchmark, linked directly from Von's own README as 'the jabr v2 benchmark'."
+  },
+  "schema_filter": {
+    "max_options": 588,
+    "unsupported_reasons": {}
+  },
+  "model": {
+    "instantiated": true,
+    "base_model": "Qwen/Qwen3.5-0.8B",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "loaded_adapters": [
+      "benchcorpus",
+      "vision"
+    ],
+    "vision_available": true,
+    "text_adapter_choice": "vision",
+    "text_adapter_choice_is_configured": true,
+    "max_options": 588,
+    "max_options_by_adapter": {
+      "benchcorpus": 588,
+      "vision": 588
+    },
+    "n_lora_modules": 96,
+    "device": "cuda",
+    "cuda_graphs_enabled": false,
+    "cuda_graphs_buckets_captured": [],
+    "backend": "routing_decoder"
+  },
+  "results": {
+    "n_items_considered": 944,
+    "n_supported_by_multischema_cap": 944,
+    "n_unsupported": 0,
+    "n_supported_with_image": 0,
+    "n": 944,
+    "accuracy": 0.673728813559322,
+    "brier": 0.4087675238994908,
+    "ece": 0.046603302929108414,
+    "is_complete_benchmark_score": true,
+    "note": "n_supported_by_multischema_cap is how many items a decoder/multischema model could legitimately attempt (a 'choice' item with between 2 and max_options=588 options, whose gold label is one of them). n_supported_with_image is how many of those items also carry a real screenshot (PRD.md 5.2b/13a.11) -- only decoder-vision-multischema[-mock] backends actually use it; every other backend here ignores an item's image the same way it ignores `instructions` if it doesn't need it. is_complete_benchmark_score is true only when every real (non-selftest) item was both supported and attempted. See PRD.md Section 14 Q4 / 13a.5 and benchmarks/README.md before treating this file as a benchmark ranking."
+  },
+  "raw_output_file": "jabr_v2-routing_decoder-20260926T150510Z.raw",
+  "harness_selftest": false
+}

@@ -1,0 +1,170 @@
+{
+  "benchmark": "vizdoom",
+  "run_id": "vizdoom-health_gathering-none-routing_decoder-20260926T151110Z",
+  "timestamp_utc": "2026-09-26T15:11:10Z",
+  "seed": 0,
+  "harness_git_commit": "372bfea1591db24ef927f55d50a688382a016b6b",
+  "dataset": {
+    "source": "live ViZDoom simulation, not a static dataset -- vendored protocol constants only (Apache-2.0, from wfzyx/von@master's benchmarks/doom_eval.py + run_doom_benchmark.py, fetched via the GitHub API 2026-09-24; see NOTICE.md)",
+    "vizdoom_version": "1.3.1",
+    "scenario_cfg": "vizdoom.scenarios_path/health_gathering.cfg (stock, ships in the wheel)",
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "seeds_are_vons_published_seeds": true,
+    "tics": 4,
+    "step_cap": 300,
+    "rubric_mode": "none",
+    "arm": "text"
+  },
+  "schema_filter": {
+    "options": [
+      "move forward",
+      "turn left",
+      "turn right"
+    ],
+    "n_options": 3,
+    "instructions": "You are controlling a marine navigating a room with acid-damage terrain in ViZDoom. Your goal is to survive as long as possible by finding medkits and avoiding hazards. Choose the action to take next, given the situation described below."
+  },
+  "model": {
+    "instantiated": true,
+    "base_model": "Qwen/Qwen3.5-0.8B",
+    "model_class": "AutoModelForImageTextToText (Qwen3_5ForConditionalGeneration)",
+    "loaded_adapters": [
+      "benchcorpus",
+      "vision"
+    ],
+    "vision_available": true,
+    "text_adapter_choice": "vision",
+    "text_adapter_choice_is_configured": true,
+    "max_options": 588,
+    "max_options_by_adapter": {
+      "benchcorpus": 588,
+      "vision": 588
+    },
+    "n_lora_modules": 96,
+    "device": "cuda",
+    "cuda_graphs_enabled": false,
+    "cuda_graphs_buckets_captured": [],
+    "backend": "routing_decoder"
+  },
+  "results": {
+    "scenario": "health_gathering",
+    "rubric": "none",
+    "tics": 4,
+    "step_cap": 300,
+    "episodes_per_seed": 1,
+    "seeds": [
+      41006394,
+      41006395,
+      41006396,
+      41006397,
+      41006398,
+      41006399,
+      41006400,
+      41006401
+    ],
+    "n_decisions": 848,
+    "n_out_of_schema": 0,
+    "survival_s_by_episode": [
+      {
+        "seed": 41006394,
+        "episode_index": 0,
+        "steps": 112,
+        "survival_s": 12.8,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.94971748441458,
+        "latency_ms_p95": 107.28999120183288
+      },
+      {
+        "seed": 41006395,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 56.773333344608545,
+        "latency_ms_p95": 86.13808965310454
+      },
+      {
+        "seed": 41006396,
+        "episode_index": 0,
+        "steps": 104,
+        "survival_s": 11.885714285714286,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.80704817920923,
+        "latency_ms_p95": 72.53096830099821
+      },
+      {
+        "seed": 41006397,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 62.10682727396488,
+        "latency_ms_p95": 78.62919731996953
+      },
+      {
+        "seed": 41006398,
+        "episode_index": 0,
+        "steps": 96,
+        "survival_s": 10.971428571428572,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 65.27842581272125,
+        "latency_ms_p95": 88.59345968812704
+      },
+      {
+        "seed": 41006399,
+        "episode_index": 0,
+        "steps": 112,
+        "survival_s": 12.8,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.26535231992602,
+        "latency_ms_p95": 76.85987367294729
+      },
+      {
+        "seed": 41006400,
+        "episode_index": 0,
+        "steps": 112,
+        "survival_s": 12.8,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 59.82603179290891,
+        "latency_ms_p95": 75.76369531452654
+      },
+      {
+        "seed": 41006401,
+        "episode_index": 0,
+        "steps": 120,
+        "survival_s": 13.714285714285714,
+        "n_out_of_schema": 0,
+        "latency_ms_p50": 65.62822684645653,
+        "latency_ms_p95": 86.80199068039656
+      }
+    ],
+    "survival_s_aggregate": {
+      "mean": 12.114285714285714,
+      "sd": 0.9963197585235825,
+      "min": 10.971428571428572,
+      "max": 13.714285714285714,
+      "n_episodes": 8
+    },
+    "rubric_agreement": {
+      "n": 848,
+      "accuracy": 0.01179245283018868,
+      "brier": 1.18932359653,
+      "ece": 0.59131123505111,
+      "note": "NOT accuracy against a gold label -- ViZDoom has no gold label for the 'right' action at any tick. This measures how often, and how confidently, the policy's choice matches the rubric's own deterministic prescribed action (benchmarks/vizdoom/rubric.py::rubric_action). See PRD.md 8.1d Finding 4."
+    },
+    "dagger": {
+      "enabled": false
+    }
+  },
+  "raw_output_file": "vizdoom-health_gathering-none-routing_decoder-20260926T151110Z.raw",
+  "episodic": true
+}

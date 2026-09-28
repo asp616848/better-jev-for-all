@@ -57,6 +57,10 @@ Flash runs the identical mechanism and API at **5× the typical speed** — the 
 
 Latency is measured end-to-end on real JevBench-shaped requests through the production serving class with CUDA graphs on. Every number above is backed by a manifest in `results/` you can re-run yourself.
 
+### In development: full-corpus 0.8B (metadata only, not released)
+
+A third checkpoint — [`ekvachan-decoder-qwen-fullcorpus-0.8b`](models/ekvachan-decoder-qwen-fullcorpus-0.8b/) — trained on all 316,156 public rows for one epoch. **Its weights are not published and are not in this repository**; the `models/` entry carries the manifest, adapter config, and measured results only. It does **not** beat the released flash model: 53.68% on JevBench and 65.25% on jabr-v2, versus 56.71% and 67.37% for `ekvachan-decoder-flash`. Recorded because a negative result is still a result.
+
 ## Architecture, in short
 
 - **Restricted-logit read** — build a prompt with a short code table (A, B, C, ...), take the last token's logits, restrict to just the relevant codes, softmax. One forward pass, no generation. Beat a from-scratch encoder classifier decisively (92.25% vs 86.32%) on **20x less training data**.

@@ -1,0 +1,61 @@
+{
+  "device": "mps",
+  "checkpoint": "ekvachan-decoder-qwen-fullcorpus (0.8B)",
+  "options_n": 5,
+  "rows": [
+    {
+      "target_tokens": 128,
+      "actual_tokens": 131,
+      "n": 15,
+      "p50_ms": 352.4592079920694,
+      "p95_ms": 385.1358749961946,
+      "mean_ms": 358.6428331997013,
+      "choice": "escalate"
+    },
+    {
+      "target_tokens": 256,
+      "actual_tokens": 256,
+      "n": 15,
+      "p50_ms": 562.355292000575,
+      "p95_ms": 563.4085420024348,
+      "mean_ms": 562.1857001310369,
+      "choice": "escalate"
+    },
+    {
+      "target_tokens": 512,
+      "actual_tokens": 512,
+      "n": 15,
+      "p50_ms": 984.1025000059744,
+      "p95_ms": 985.9089169913204,
+      "mean_ms": 983.8622001319891,
+      "choice": "escalate"
+    },
+    {
+      "target_tokens": 1024,
+      "actual_tokens": 1025,
+      "n": 15,
+      "p50_ms": 1890.807040996151,
+      "p95_ms": 2082.4802090064622,
+      "mean_ms": 1929.7212722032175,
+      "choice": "escalate"
+    },
+    {
+      "target_tokens": 2048,
+      "actual_tokens": 2049,
+      "n": 15,
+      "p50_ms": 3757.214750003186,
+      "p95_ms": 3774.224749999121,
+      "mean_ms": 3759.803360933438,
+      "choice": "escalate"
+    },
+    {
+      "target_tokens": 4096,
+      "actual_tokens": 4099,
+      "n": 15,
+      "p50_ms": 7661.146915997961,
+      "p95_ms": 8138.415291992715,
+      "mean_ms": 7594.236563999827,
+      "choice": "escalate"
+    }
+  ]
+}
